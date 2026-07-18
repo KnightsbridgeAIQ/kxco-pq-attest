@@ -56,7 +56,7 @@
     "node": ">=20.19"
   },
   "dependencies": {
-    "kxco-post-quantum": "^1.1.6"
+    "kxco-post-quantum": "^1.1.12"
   },
   "scripts": {
     "test": "node --test --test-timeout=30000 test/attest.test.js"
