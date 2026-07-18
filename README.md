@@ -132,7 +132,7 @@ The signing message is a deterministic concatenation: `kxco-attest-v1\n<payloadB
 
 Cryptographic signing is provided by [Noble post-quantum](https://github.com/paulmillr/noble-post-quantum) — independently audited by Cure53 (2024). All ML-DSA-65 operations conform to NIST FIPS 204.
 
-To report a vulnerability, open a [private security advisory](https://github.com/JackKXCO/kxco-pq-attest/security/advisories/new) or email **security@kxco.ai**.
+To report a vulnerability, open a [private security advisory](https://github.com/KnightsbridgeAIQ/kxco-pq-attest/security/advisories/new) or email **security@kxco.ai**.
 
 ## License
 
