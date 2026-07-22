@@ -1,6 +1,6 @@
 {
   "name": "kxco-pq-attest",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Post-quantum document signing and on-chain attestation. Signs arbitrary payloads with ML-DSA-65 (NIST FIPS 204), producing a self-contained JSON envelope any counterparty can verify. Optionally anchors the envelope hash on Armature L1 for a permanent timestamped on-chain record.",
   "keywords": [
     "post-quantum",
@@ -21,7 +21,7 @@
     "compliance"
   ],
   "license": "Apache-2.0",
-  "author": "KXCO by Knightsbridge <hello@kxco.ai>",
+  "author": "Shayne Heffernan and John Heffernan",
   "contributors": [
     {
       "name": "Shayne Heffernan"
@@ -56,7 +56,7 @@
     "node": ">=20.19"
   },
   "dependencies": {
-    "kxco-post-quantum": "^1.1.12"
+    "kxco-post-quantum": "^1.2.0"
   },
   "scripts": {
     "test": "node --test --test-timeout=30000 test/attest.test.js"
