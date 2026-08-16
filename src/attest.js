@@ -36,7 +36,7 @@ export async function attest(payload, keypair, { anchor = false, purpose, chain 
   const kid        = fingerprint(keypair.publicKey)
   const issuedAt   = new Date().toISOString()
   const msg        = signingMsg(payloadB64, kid, issuedAt)
-  const sig        = mlDsa.ml_dsa65.sign(new Uint8Array(keypair.secretKey), msg)
+  const sig        = Buffer.from(mlDsa.sign(new Uint8Array(keypair.secretKey), msg), 'hex')
 
   const envelope = {
     'kxco-attest': VERSION,
@@ -73,7 +73,7 @@ export function verify(envelope, publicKey) {
   const msg = signingMsg(payloadB64, kid, issuedAt)
   let ok
   try {
-    ok = mlDsa.ml_dsa65.verify(new Uint8Array(publicKey), msg, fromB64url(signature))
+    ok = mlDsa.verify(new Uint8Array(publicKey), msg, Buffer.from(fromB64url(signature)).toString('hex'))
   } catch {
     ok = false
   }

@@ -1,6 +1,6 @@
 {
   "name": "kxco-pq-attest",
-  "version": "1.1.1",
+  "version": "1.1.3",
   "description": "Post-quantum document signing and on-chain attestation. Signs arbitrary payloads with ML-DSA-65 (NIST FIPS 204), producing a self-contained JSON envelope any counterparty can verify. Optionally anchors the envelope hash on Armature L1 for a permanent timestamped on-chain record.",
   "keywords": [
     "post-quantum",
@@ -33,10 +33,10 @@
   "homepage": "https://kxco.ai",
   "repository": {
     "type": "git",
-    "url": "https://github.com/JackKXCO/kxco-pq-attest.git"
+    "url": "https://github.com/KnightsbridgeAIQ/kxco-pq-attest.git"
   },
   "bugs": {
-    "url": "https://github.com/JackKXCO/kxco-pq-attest/issues"
+    "url": "https://github.com/KnightsbridgeAIQ/kxco-pq-attest/issues"
   },
   "type": "module",
   "sideEffects": false,
@@ -56,7 +56,7 @@
     "node": ">=20.19"
   },
   "dependencies": {
-    "kxco-post-quantum": "^1.1.6"
+    "kxco-post-quantum": "^1.3.0"
   },
   "scripts": {
     "test": "node --test --test-timeout=30000 test/attest.test.js"
