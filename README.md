@@ -157,7 +157,9 @@ The signing message is a deterministic concatenation: `kxco-attest-v1\n<payloadB
 
 ## Security
 
-Cryptographic signing is provided by [Noble post-quantum](https://github.com/paulmillr/noble-post-quantum) — independently audited by Cure53 (2024). All ML-DSA-65 operations conform to NIST FIPS 204.
+Cryptographic signing delegates to [`kxco-post-quantum`](https://www.npmjs.com/package/kxco-post-quantum), which wraps [`@noble/post-quantum`](https://github.com/paulmillr/noble-post-quantum). All ML-DSA-65 operations conform to NIST FIPS 204, checked against NIST's own ACVP vectors.
+
+**That upstream package has not been independently audited by a third party.** It has been self-audited by its maintainer. The other Noble packages have been audited, but separately and at different times: `@noble/hashes` by Cure53 in January 2022, `@noble/curves` by Trail of Bits in February 2023, Kudelski in September 2023 and Cure53 in September 2024, and `@noble/ciphers` by Cure53 in September 2024. None of those engagements covered the post-quantum package. Earlier versions of this README said otherwise; that was wrong and is corrected here. This package has had no third-party assessment either. See [`kxco-post-quantum/AUDIT.md`](https://github.com/KnightsbridgeAIQ/kxco-post-quantum/blob/main/AUDIT.md) for the full posture, and re-run the published vectors yourself rather than taking any of it on trust.
 
 To report a vulnerability, open a [private security advisory](https://github.com/KnightsbridgeAIQ/kxco-pq-attest/security/advisories/new) or email **security@kxco.ai**.
 
