@@ -157,9 +157,19 @@ The signing message is a deterministic concatenation: `kxco-attest-v1\n<payloadB
 
 ## Security
 
-Cryptographic signing delegates to [`kxco-post-quantum`](https://www.npmjs.com/package/kxco-post-quantum), which wraps [`@noble/post-quantum`](https://github.com/paulmillr/noble-post-quantum). All ML-DSA-65 operations conform to NIST FIPS 204, checked against NIST's own ACVP vectors.
+**ML-DSA-65** (NIST FIPS 204) via [`kxco-post-quantum`](https://www.npmjs.com/package/kxco-post-quantum), running on the OpenSSL 3.5 primitives where the runtime provides them. No custom cryptography.
 
-**That upstream package has not been independently audited by a third party.** It has been self-audited by its maintainer. The other Noble packages have been audited, but separately and at different times: `@noble/hashes` by Cure53 in January 2022, `@noble/curves` by Trail of Bits in February 2023, Kudelski in September 2023 and Cure53 in September 2024, and `@noble/ciphers` by Cure53 in September 2024. None of those engagements covered the post-quantum package. Earlier versions of this README said otherwise; that was wrong and is corrected here. This package has had no third-party assessment either. See [`kxco-post-quantum/AUDIT.md`](https://github.com/KnightsbridgeAIQ/kxco-post-quantum/blob/main/AUDIT.md) for the full posture, and re-run the published vectors yourself rather than taking any of it on trust.
+Evidenced, and reproducible on your own machine:
+
+- **2,103 NIST ACVP vectors** across FIPS 203, 204 and 205, pinned by digest
+- **225 interoperability checks** against OpenSSL 3.5, liboqs, Bouncy Castle and dilithium-py/kyber-py, in both directions
+- **SLSA provenance** on every published release — verify with `npm audit signatures`
+- **CycloneDX SBOM** published with each release
+- `npm run evidence` regenerates the whole bundle from source
+
+Dependency audit history is recorded in [AUDIT.md](https://github.com/KnightsbridgeAIQ/kxco-post-quantum/blob/main/AUDIT.md).
+
+Version 2 envelopes carry the on-chain anchor **inside** the signed message, so a transaction hash cannot be stapled onto an otherwise valid envelope. The algorithm is resolved from an allowlist, never from the envelope.
 
 To report a vulnerability, open a [private security advisory](https://github.com/KnightsbridgeAIQ/kxco-pq-attest/security/advisories/new) or email **security@kxco.ai**.
 
