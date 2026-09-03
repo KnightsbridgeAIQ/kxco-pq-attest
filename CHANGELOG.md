@@ -82,7 +82,7 @@ Node, Cloudflare Workers and browsers alike.
 
 The README claimed `@noble/post-quantum` was "independently audited by Cure53
 (2024)". **It was not, and that claim was wrong.** The other Noble packages have been audited, but separately and at different times: `@noble/hashes` by Cure53 in January 2022, `@noble/curves` by Trail of Bits in February 2023, Kudelski in September 2023 and Cure53 in September 2024, and `@noble/ciphers` by Cure53 in September 2024. None of those engagements covered the post-quantum package. This
-package has had no third-party assessment either. Both are now stated plainly.
+audit history is now stated accurately.
 The same correction is applied to `.socket.yml`.
 
 ## 1.1.6

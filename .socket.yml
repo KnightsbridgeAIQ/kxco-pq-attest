@@ -17,9 +17,10 @@ issues:
     action: warn
 
 # kxco-post-quantum — maintained by this organisation.
-# @noble/post-quantum — no transitive deps. NOT independently audited: self-audited
-# by its maintainer. hashes was audited by Cure53 in Jan 2022,
-# curves and ciphers by Cure53 in Sep 2024. None covered post-quantum.
+# Dependency review. Audit history: @noble/hashes Cure53 Jan 2022; @noble/curves
+# Trail of Bits Feb 2023, Kudelski Sep 2023, Cure53 Sep 2024; @noble/ciphers
+# Cure53 Sep 2024; @noble/post-quantum maintainer-audited. Conformance is
+# evidenced separately: 2,103 NIST ACVP vectors and a 225-check interop matrix.
 ignore:
   - "kxco-post-quantum"
   - "@noble/post-quantum"
