@@ -140,11 +140,15 @@ Verifies the ML-DSA-65 signature on an envelope. Returns synchronously.
 
 The signing message is a deterministic concatenation: `kxco-attest-v1\n<payloadB64>\n<kid>\n<issuedAt>`. No field can be silently reordered or replayed against a different timestamp without invalidating the signature.
 
-## What this does NOT do
+## Where this fits
 
-- **Encryption.** The payload is base64url-encoded, not encrypted. Anyone with the envelope can read the payload. Use `kxco-pq-vault` for confidential data.
-- **Identity credentials.** This package signs data, not identity claims. Use `kxco-pq-sdk` to issue and verify KxcoIdentity credentials.
-- **Key management.** Keypairs are caller-supplied. Key generation, storage, and rotation are outside the scope of this package.
+This signs, so anyone can prove where a payload came from and that it has not
+changed. The envelope is readable by design: a counterparty verifies it without
+a key exchange, offline, years later.
+
+- [`kxco-pq-vault`](https://www.npmjs.com/package/kxco-pq-vault) when the payload must be unreadable as well as provable
+- [`kxco-pq-sdk`](https://www.npmjs.com/package/kxco-pq-sdk) to issue and verify identity credentials
+- [`kxco-pq-hsm`](https://www.npmjs.com/package/kxco-pq-hsm) for key generation, storage and rotation in hardware
 
 ## Part of the KXCO stack
 

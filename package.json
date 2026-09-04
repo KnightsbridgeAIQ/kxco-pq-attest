@@ -1,7 +1,7 @@
 {
   "name": "kxco-pq-attest",
   "version": "2.0.0",
-  "description": "Post-quantum document signing and on-chain attestation. Signs arbitrary payloads with ML-DSA-65 (NIST FIPS 204), producing a self-contained JSON envelope any counterparty can verify. Optionally anchors the envelope hash on Armature L1 for a permanent timestamped on-chain record.",
+  "description": "Post-quantum document signing and on-chain attestation. ML-DSA-65 (FIPS 204) over any payload, producing a self-contained JSON envelope a counterparty verifies offline. Anchor the envelope on Armature L1 for a permanent timestamped record the chain itself has verified.",
   "keywords": [
     "post-quantum",
     "pqc",
