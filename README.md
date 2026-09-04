@@ -30,7 +30,7 @@ Every release of this package is checkable without asking us for anything.
   Every GitHub Action is pinned by 40-character commit SHA.
 - **Conformance underneath.** The cryptography comes from
   [`kxco-post-quantum`](https://www.npmjs.com/package/kxco-post-quantum), which
-  is run against **2,103 NIST ACVP vectors (0 failed)** and a **225-check
+  is run against **2,103 NIST ACVP vectors: 1,793 passed, 0 failed, 310 skipped** and a **225-check
   cross-implementation interoperability matrix** against liboqs, Bouncy Castle
   and two pure-Python implementations, in both directions and with negative
   controls. Its published tarball also rebuilds bit-for-bit from its own tag,
@@ -140,11 +140,15 @@ Verifies the ML-DSA-65 signature on an envelope. Returns synchronously.
 
 The signing message is a deterministic concatenation: `kxco-attest-v1\n<payloadB64>\n<kid>\n<issuedAt>`. No field can be silently reordered or replayed against a different timestamp without invalidating the signature.
 
-## What this does NOT do
+## Where this fits
 
-- **Encryption.** The payload is base64url-encoded, not encrypted. Anyone with the envelope can read the payload. Use `kxco-pq-vault` for confidential data.
-- **Identity credentials.** This package signs data, not identity claims. Use `kxco-pq-sdk` to issue and verify KxcoIdentity credentials.
-- **Key management.** Keypairs are caller-supplied. Key generation, storage, and rotation are outside the scope of this package.
+This signs, so anyone can prove where a payload came from and that it has not
+changed. The envelope is readable by design: a counterparty verifies it without
+a key exchange, offline, years later.
+
+- [`kxco-pq-vault`](https://www.npmjs.com/package/kxco-pq-vault) when the payload must be unreadable as well as provable
+- [`kxco-pq-sdk`](https://www.npmjs.com/package/kxco-pq-sdk) to issue and verify identity credentials
+- [`kxco-pq-hsm`](https://www.npmjs.com/package/kxco-pq-hsm) for key generation, storage and rotation in hardware
 
 ## Part of the KXCO stack
 
@@ -157,7 +161,19 @@ The signing message is a deterministic concatenation: `kxco-attest-v1\n<payloadB
 
 ## Security
 
-Cryptographic signing is provided by [Noble post-quantum](https://github.com/paulmillr/noble-post-quantum) — independently audited by Cure53 (2024). All ML-DSA-65 operations conform to NIST FIPS 204.
+**ML-DSA-65** (NIST FIPS 204) via [`kxco-post-quantum`](https://www.npmjs.com/package/kxco-post-quantum), running on the OpenSSL 3.5 primitives where the runtime provides them. No custom cryptography.
+
+Evidenced, and reproducible on your own machine:
+
+- **2,103 NIST ACVP vectors** across FIPS 203, 204 and 205, pinned by digest: 1,793 passed, 0 failed, 310 skipped, where each skip is the library refusing a pre-hash weaker than the parameter set
+- **225 interoperability checks passed, 0 failed, 42 not applicable** against OpenSSL 3.5, liboqs, Bouncy Castle and dilithium-py/kyber-py, in both directions
+- **SLSA provenance** on every published release — verify with `npm audit signatures`
+- **CycloneDX SBOM** published with each release
+- `npm run evidence` regenerates the whole bundle from source
+
+Dependency audit history is recorded in [AUDIT.md](https://github.com/KnightsbridgeAIQ/kxco-post-quantum/blob/main/AUDIT.md).
+
+Version 2 envelopes carry the on-chain anchor **inside** the signed message, so a transaction hash cannot be stapled onto an otherwise valid envelope. The algorithm is resolved from an allowlist, never from the envelope.
 
 To report a vulnerability, open a [private security advisory](https://github.com/KnightsbridgeAIQ/kxco-pq-attest/security/advisories/new) or email **security@kxco.ai**.
 

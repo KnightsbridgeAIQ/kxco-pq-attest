@@ -68,8 +68,12 @@ jobs:
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.event.inputs.ref || github.ref_name }}
+        # The tag names the version that was actually published, rather than
+        # the ref this run was dispatched with. Those differ whenever a release
+        # is re-run from a branch, and taking the ref name would title the
+        # release after the branch and cut a git tag named after it.
         run: |
+          TAG="v$(node -p "require('./package.json').version")"
           gh release view "$TAG" >/dev/null 2>&1 \
             || gh release create "$TAG" --title "$TAG" --generate-notes
           gh release upload "$TAG" sbom.cyclonedx.json --clobber
