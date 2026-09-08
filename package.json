@@ -52,7 +52,8 @@
     "CHANGELOG.md",
     "LICENSE",
     "README.md",
-    "src"
+    "src",
+    "ASSESSMENT.md"
   ],
   "engines": {
     "node": ">=20.19"
@@ -62,7 +63,8 @@
     "kxco-pq-network": "^1.0.0"
   },
   "scripts": {
-    "test": "node --test --test-timeout=30000 test/attest.test.js test/envelope-v2.test.js"
+    "test": "node --test --test-timeout=30000 test/attest.test.js test/envelope-v2.test.js",
+    "evidence": "node scripts/build-evidence.mjs"
   },
   "funding": "https://kxco.ai",
   "publishConfig": {
