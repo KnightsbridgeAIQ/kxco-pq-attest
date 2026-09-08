@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.0.2
+
+Documentation and a dependency refresh. No source change.
+
+**ASSESSMENT.md.** Where this package's boundary falls, what cryptographic
+agility it has beyond what the primitives provide, and what constrains its
+lifecycle. It references the `kxco-post-quantum` evidence rather than restating
+it, because a second copy of a conformance claim invites the reader to count it
+twice.
+
+**`npm run evidence` now exists.** The README already told you to run it and
+there was no such script, so the command failed for anyone who followed it.
+The bundle records identity, this package's own tests, its SBOM, registry
+signature verification, and the `kxco-post-quantum` version actually installed
+rather than the range declared.
+
+**`kxco-post-quantum` refreshed to 1.7.2**, from 1.6.0 in the previous
+lockfile. Within the existing range, so no declared dependency changed. Tests
+pass unchanged.
+
 ## 2.0.0
 
 **Version 1 envelopes still verify. That is not going to change.** An archive
