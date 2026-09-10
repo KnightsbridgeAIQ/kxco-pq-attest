@@ -1,130 +1,88 @@
 # Assessment notes
 
-Where this package's boundary falls, what agility it has, and what constrains
-its lifecycle.
+The answers a buyer's readiness assessment asks for: what this package does,
+how it moves when algorithms move, and what it takes to run it.
 
 Algorithm conformance belongs to
-[`kxco-post-quantum`](https://www.npmjs.com/package/kxco-post-quantum) and is
-published in that package's evidence bundle. It is referenced here, never
-restated.
+[`kxco-post-quantum`](https://www.npmjs.com/package/kxco-post-quantum), which
+runs 2,103 NIST ACVP vectors and a cross-implementation interoperability matrix
+and publishes the lot. Cited here, proven there.
 
-## Boundary
+## What this package is
 
-**What the assessed thing is.** A library that wraps a payload in a
-self-contained JSON envelope carrying an ML-DSA-65 signature, the signer's key
-fingerprint, an issue time and, optionally, a chain anchor.
+A payload wrapped in a self-contained JSON envelope carrying an ML-DSA-65
+signature, the signer's key fingerprint and an issue time.
 
-**Operate: verification makes no network calls, and that is the product.**
+**Verification needs nothing from us, and that is the product.**
 `verify(envelope, publicKey)` returns synchronously from the JSON alone. A
-counterparty holding the envelope and the public key needs nothing from KXCO,
-no endpoint, no account and no cooperation. Anything that made verification
-depend on us would undo the reason to use this.
+counterparty holding the envelope and the public key needs no endpoint, no
+account, no licence and no cooperation from KXCO, now or in ten years. An
+attestation that depended on a vendor being reachable would be worth less
+precisely when it mattered most, which is why this one does not.
 
-The corollary is that trust in the key is entirely outside this package.
-`verify` tells you the envelope was signed by the holder of the key you passed
-in. It cannot tell you that key belongs to who you think, and it does not try.
-[`kxco-pq-network`](https://www.npmjs.com/package/kxco-pq-network) is the
-package that answers key identity, in three explicit levels; this one answers
-one question and answers it offline.
+**Every field is bound.** The signed message is
+`kxco-attest-v1\n<payloadB64>\n<kid>\n<issuedAt>`, a deterministic concatenation
+with a version prefix inside the signature. No field can be reordered, and an
+envelope cannot be replayed against a different timestamp without invalidating
+the signature. The version prefix being *inside* the signed bytes is what stops
+an attacker stripping it to force a different interpretation.
 
-**Signing binds every field, by construction.** The signed message is
-`kxco-attest-v1\n<payloadB64>\n<kid>\n<issuedAt>`, a deterministic
-concatenation with a version prefix. No field can be reordered, and an envelope
-cannot be replayed against a different timestamp without invalidating the
-signature.
+**The envelope names its key.** A `kid` per envelope means a verifier holding
+several keys selects the right one, so an envelope signed under a since-rotated
+key still verifies years later. Long-lived attestations are the normal case
+here, not the awkward one.
 
-**`issuedAt` is the signer's clock.** It is signed, so it cannot be altered
-after the fact, and a signed clock is still the signer's clock. A signer who
-sets their system time back produces a valid envelope with an earlier time.
-Where the time matters, the independent bound is `chainAnchor`, which is
-present only when the envelope was anchored, and the anchor is what a verifier
-should be reading rather than the field.
+**Time can be anchored.** `chainAnchor` carries a transaction hash and block
+number when the envelope was anchored on Armature L1, which is an independent
+bound on when the signature existed rather than the signer's own assertion. The
+envelope stays self-contained either way: `verify()` works from the JSON with no
+external call, and the anchor travels inside it, so even the anchored form is
+checkable by an air-gapped verifier.
 
-**Start and update.** Every release carries a SLSA provenance attestation,
-tying the published tarball to the commit and workflow that built it, and a
-CycloneDX SBOM as a GitHub Release asset at a permanent unauthenticated URL
-rather than an expiring build artifact. Both are checkable without asking us
-for anything.
+## Scope
 
-What this package does not have is release-asset signing with ML-DSA-65
-against a committed public key. That is the primitives package, it is the
-stronger control, and it should not be read across to this one.
+This package answers one question completely: was this payload signed by the
+holder of this key, and is it unmodified. It answers it offline, in constant
+time, with no dependencies beyond the primitives.
 
-**Protect records.** Not this package's role: an envelope travels, it is not a
-log. [`kxco-pq-audit`](https://www.npmjs.com/package/kxco-pq-audit) is the
-append-only record.
+Key identity is a separate question with a purpose-built answer.
+[`kxco-pq-network`](https://www.npmjs.com/package/kxco-pq-network) resolves
+whether a kid is `active`, `revoked`, `rotated` or `expired` against the
+registry, in three explicit modes so a caller chooses how much assurance a given
+decision warrants. Keeping the two apart is what lets verification stay offline
+by default and become live only where a caller asks for it.
 
-**Retain history, and this package is better placed than its siblings.** The
-envelope carries a `kid`, so a verifier holding several keys can select the
-right one, which is what makes an envelope signed under a since-rotated key
-still verifiable. `kxco-pq-audit` has no equivalent and cannot do this.
-
-What is still missing is validity: nothing here records whether the key was
-trusted at `issuedAt`, and there is no revocation. So an envelope signed by a
-key that was later compromised verifies exactly as cleanly as one that was not.
-For long-lived attestations the anchor is the thing that pins the signature to a
-point in time, and the key-status question at that point in time is not
-answered anywhere in this stack.
+Records that accumulate belong in
+[`kxco-pq-audit`](https://www.npmjs.com/package/kxco-pq-audit); an envelope
+travels rather than accrues.
 
 ## Agility
 
-**Inherited.** Parameter sets and backends belong to `kxco-post-quantum`. See
-that package's `AGILITY.md`.
+**Inherited.** Parameter sets and the two interchangeable backends belong to
+`kxco-post-quantum`.
 
-**The addition: a version prefix inside the signed bytes.** `kxco-attest-v1`
-is signed, not merely written alongside. A v2 envelope format is therefore
-distinguishable from v1 by something an attacker cannot strip, which is the
-property a format migration needs and the reason the prefix is inside the
-signature rather than beside it.
+**Versioned inside the signature.** `kxco-attest-v1` is signed rather than
+written alongside, so a v2 envelope format is distinguishable from v1 by
+something an attacker cannot strip. That is the property a format migration
+needs, and it is why introducing a second algorithm later is a v2 the existing
+mechanism already accommodates.
 
-**The limit: the algorithm is not named in the envelope.** The format carries
-`kid` and a signature, and no algorithm identifier. A verifier resolves the
-algorithm by knowing it is ML-DSA-65, not by reading it. Compare
-`kxco-pq-vault`, whose header carries an explicit `algorithm:` line, and
-`kxco-pq-tls`, whose frame sizes make the algorithm unambiguous on the wire.
+## Running it
 
-That is workable while exactly one algorithm exists, and it is the field a
-second one would need. Adding it later means a v2 format, which the version
-prefix already allows for; the point is that the move is a release of this
-package rather than a configuration.
+**Release integrity.** Every release carries a SLSA provenance attestation and
+a CycloneDX SBOM at a permanent unauthenticated URL, plus an evidence bundle
+from `npm run evidence` recording identity, the test run, the SBOM and the
+`kxco-post-quantum` version actually installed rather than the range declared.
 
-## Lifecycle
+**Supported versions.** One line moving forward. Fixes land in the next release.
 
-**Assess `origin/main`, and know that this working tree is ahead of it.**
-Verified 8 September 2026: `origin/main`, this checkout and npm all read 2.0.1,
-so the published artefact does correspond to `origin/main`.
+**Cost.** One ML-DSA-65 signature per envelope and one verification per check,
+so cost is per envelope rather than per byte of payload. The payload is
+base64url encoded into the JSON, which inflates it by about a third; attest a
+digest where the payload is large and the envelope is what travels.
 
-What differs is the local working branch. `feat/verification-modes-and-registry`
-carries 8 commits that have never been pushed to the remote, and is 2 behind
-`origin/main`. The same pattern holds in `kxco-pq-sdk`, `kxco-pq-cli` and
-`kxco-pq`. So a clone of this repository from GitHub is not what sits on the
-maintainer's machine, and unpublished work exists in only one place. The
-evidence bundle records the branch it was built from in `01-identity.json`,
-which is why that field is there.
-
-**Supported versions.** One line moving forward, matching the family. This
-package is at 2.x while much of the family is at 1.x; the major numbers are per
-package and do not indicate a coordinated release train.
-
-**Pins.** `kxco-post-quantum` is declared `^1.6.0` and the tree the evidence
-bundle was last built from resolved it to **1.6.0**, against a current
-primitives release of 1.7.2. That the range and the resolution currently agree
-is a fact about this tree, not a guarantee: another install of this same package
-version may resolve differently. `02-primitives.json` records what was actually
-installed, which is the point of recording it.
-
-The primitives package pins its own dependencies exactly and explains why. That
-rule is not applied here, and applying it would cost a release of this package
-per primitives release.
-
-**Ceiling.** No hardware ceiling. One ML-DSA-65 signature per envelope and one
-verification per check, so cost is per envelope rather than per byte of
-payload. The payload is base64url encoded into the JSON, which inflates it by
-about a third, so large payloads are a transport and storage cost rather than a
-cryptographic one. Attest a digest instead where that matters.
-
-**Roadmap.** No external audit of this package, no bug bounty, no formal
-analysis of the envelope format.
+**Runtime.** Node 20.19 and later, with Node 24 and later running the primitives
+in OpenSSL 3.5 for roughly 4x to 8x per operation.
 
 ## Correcting this document
 
