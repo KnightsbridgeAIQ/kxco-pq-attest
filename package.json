@@ -1,6 +1,6 @@
 {
   "name": "kxco-pq-attest",
-  "version": "2.0.5",
+  "version": "2.0.6",
   "description": "Post-quantum document signing any counterparty can verify offline, years later. ML-DSA-65 (NIST FIPS 204) over any payload in a self-contained JSON envelope, with optional anchoring on Armature L1 for a timestamp the chain itself has verified.",
   "keywords": [
     "post-quantum",
@@ -60,6 +60,7 @@
   "files": [
     "CHANGELOG.md",
     "LICENSE",
+    "NOTICE",
     "README.md",
     "src",
     "ASSESSMENT.md"
