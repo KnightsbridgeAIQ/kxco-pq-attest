@@ -20,7 +20,7 @@ Signs arbitrary data (strings, Buffers, objects) with ML-DSA-65 (NIST FIPS 204) 
 - **Three levels of proof.** `signature` and `anchored` verify offline for good; `anchored+live` adds the KXCO registry's answer that the signing key is still trusted now.
 - **Runs where you do.** Node.js 20.19 and later, and Cloudflare Workers.
 - **Proven underneath.** 1,793 NIST ACVP vectors passed, 0 failed, and 225 interoperability checks against liboqs, Bouncy Castle and the Python reference implementations, 0 failed, in [`kxco-post-quantum`](https://github.com/KnightsbridgeAIQ/kxco-post-quantum/blob/main/CONFORMANCE.md).
-- **A supply chain you can check.** SLSA provenance and a CycloneDX SBOM on every release, third-party dependencies pinned to exact versions, and every GitHub Action pinned by commit SHA.
+- **A supply chain you can check.** SLSA provenance and a CycloneDX SBOM on every release since 1.1.5, third-party dependencies pinned to exact versions, and every GitHub Action pinned by commit SHA.
 
 **The migration has dates.**
 
@@ -199,10 +199,10 @@ unchanged. The rest of the family covers the jobs around it:
 
 ## Release integrity
 
-Each release carries a SLSA provenance attestation tying the published tarball to
+Every release since 1.1.5 carries a SLSA provenance attestation tying the published tarball to
 the commit and workflow that built it: verify with `npm audit signatures`, or read
 it from `registry.npmjs.org/-/npm/v1/attestations/kxco-pq-attest@<version>`. A CycloneDX
-SBOM is published as a GitHub Release asset at
+SBOM is published, from v1.1.5, as a GitHub Release asset at
 `releases/download/v<version>/sbom.cyclonedx.json`, a permanent unauthenticated
 URL. Sibling `kxco-*` packages sit on caret ranges so a correctness fix in the
 base package reaches you on the next install, with no release of every package
@@ -216,8 +216,8 @@ Evidenced, and reproducible on your own machine:
 
 - **1,793 NIST ACVP vectors passed, 0 failed** across FIPS 203, 204 and 205, pinned by digest, per [CONFORMANCE.md](https://github.com/KnightsbridgeAIQ/kxco-post-quantum/blob/main/CONFORMANCE.md). The other 310 are pairings the library refuses as weaker than the parameter set
 - **225 interoperability checks passed, 0 failed**, against OpenSSL 3.5, liboqs, Bouncy Castle and dilithium-py/kyber-py, in both directions
-- **SLSA provenance** on every published release: verify with `npm audit signatures`
-- **CycloneDX SBOM** published with each release
+- **SLSA provenance** on every release since 1.1.5: verify with `npm audit signatures`
+- **CycloneDX SBOM** published with every release since 1.1.5
 - `npm run evidence` regenerates the whole bundle from source
 
 Dependency audit history is recorded in [AUDIT.md](https://github.com/KnightsbridgeAIQ/kxco-post-quantum/blob/main/AUDIT.md).
