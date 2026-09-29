@@ -1,7 +1,7 @@
 {
   "name": "kxco-pq-attest",
-  "version": "2.0.3",
-  "description": "Post-quantum document signing and on-chain attestation. ML-DSA-65 (FIPS 204) over any payload, producing a self-contained JSON envelope a counterparty verifies offline. Anchor it on Armature L1 for a timestamped record the chain itself has verified.",
+  "version": "2.0.4",
+  "description": "Post-quantum document signing any counterparty can verify offline, years later. ML-DSA-65 (NIST FIPS 204) over any payload in a self-contained JSON envelope, with optional anchoring on Armature L1 for a timestamp the chain itself has verified.",
   "keywords": [
     "post-quantum",
     "pqc",
@@ -18,7 +18,17 @@
     "regulatory",
     "identity",
     "credential",
-    "compliance"
+    "compliance",
+    "quantum-safe",
+    "pqc-migration",
+    "digital-signature",
+    "document-signing",
+    "e-signature",
+    "timestamping",
+    "non-repudiation",
+    "tamper-evident",
+    "audit-trail",
+    "crypto-agility"
   ],
   "license": "Apache-2.0",
   "author": "Shayne Heffernan and John Heffernan",

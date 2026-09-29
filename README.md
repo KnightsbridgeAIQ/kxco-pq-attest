@@ -1,40 +1,34 @@
 # kxco-pq-attest
 
+**Post-quantum document signing any counterparty can verify offline, years later, with nobody to ask.**
+
 [![npm](https://img.shields.io/npm/v/kxco-pq-attest?label=npm&color=b0964f)](https://www.npmjs.com/package/kxco-pq-attest)
+[![downloads](https://img.shields.io/npm/dm/kxco-pq-attest?label=downloads&color=b0964f)](https://www.npmjs.com/package/kxco-pq-attest)
+[![NIST ACVP](https://img.shields.io/badge/NIST_ACVP-1,793_passed,_0_failed-2ea44f)](https://github.com/KnightsbridgeAIQ/kxco-post-quantum/blob/main/CONFORMANCE.md)
+[![npm provenance](https://img.shields.io/badge/npm-provenance-2ea44f)](https://www.npmjs.com/package/kxco-pq-attest)
 [![Socket](https://socket.dev/api/badge/npm/package/kxco-pq-attest)](https://socket.dev/npm/package/kxco-pq-attest)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue)](./LICENSE)
 [![node](https://img.shields.io/node/v/kxco-pq-attest.svg)](https://nodejs.org)
 
-Post-quantum document signing and on-chain attestation.
+Signs arbitrary data (strings, Buffers, objects) with ML-DSA-65 (NIST FIPS 204) and produces a self-contained JSON envelope any counterparty can verify without trust delegation. Optionally anchors the envelope hash on Armature L1 via the KXCO relay, creating a permanent timestamped on-chain record.
 
-Signs arbitrary data — strings, Buffers, objects — with ML-DSA-65 (NIST FIPS 204) and produces a self-contained JSON envelope any counterparty can verify without trust delegation. Optionally anchors the envelope hash on Armature L1 via the KXCO relay, creating a permanent timestamped on-chain record.
+- **Verification needs nothing from us.** `verify(envelope, publicKey)` returns from the JSON alone: no endpoint, no account and no licence, now or in ten years.
+- **Every field is bound.** Payload, key id and issue time sit inside the signed bytes behind a version prefix, so no field can be reordered or replayed against a different timestamp.
+- **Survives key rotation.** Each envelope names its key, so an envelope signed under a since-rotated key still verifies years later.
+- **Time the chain itself vouches for.** Anchor on Armature L1 and the transaction hash and block number travel inside the signed message, still checkable by an air-gapped verifier.
+- **Hybrid when a policy asks for it.** `attest(payload, keypair, { classical })` adds an Ed25519 or ECDSA-P256 co-signature over the same message, and `verifyAsync(envelope, key, { requireBoth: true })` demands both.
+- **Three levels of proof.** `signature` and `anchored` verify offline for good; `anchored+live` adds the KXCO registry's answer that the signing key is still trusted now.
+- **Runs where you do.** Node.js 20.19 and later, and Cloudflare Workers.
+- **Proven underneath.** 1,793 NIST ACVP vectors passed, 0 failed, and 225 interoperability checks against liboqs, Bouncy Castle and the Python reference implementations, 0 failed, in [`kxco-post-quantum`](https://github.com/KnightsbridgeAIQ/kxco-post-quantum/blob/main/CONFORMANCE.md).
+- **A supply chain you can check.** SLSA provenance and a CycloneDX SBOM on every release, third-party dependencies pinned to exact versions, and every GitHub Action pinned by commit SHA.
 
-## Release integrity
+**The migration has dates.**
 
-Every release of this package is checkable without asking us for anything.
+- **NIST** published [FIPS 203](https://csrc.nist.gov/pubs/fips/203/final), [FIPS 204](https://csrc.nist.gov/pubs/fips/204/final) and [FIPS 205](https://csrc.nist.gov/pubs/fips/205/final) in August 2024.
+- **United States:** [Executive Order 14412](https://www.federalregister.gov/documents/2026/06/25/2026-12909/securing-the-nation-against-advanced-cryptographic-attacks), signed on 22 June 2026, moves federal high-value and high-impact systems to post-quantum key establishment by 31 December 2030 and to post-quantum signatures by 31 December 2031. [OMB M-26-15](https://www.whitehouse.gov/wp-content/uploads/2026/06/M-26-15-Execution-of-the-Migration-to-Post-Quantum-Cryptography.pdf) requires PQC-agile libraries for all new applications.
+- **United Kingdom:** the [NCSC](https://www.ncsc.gov.uk/guidance/pqc-migration-timelines) sets 2028, 2031 and 2035 as its migration milestones.
 
-- **Provenance.** Each release carries a SLSA provenance attestation tying the
-  published tarball to the commit and workflow that built it. Verify with
-  `npm audit signatures`, or read it directly from
-  `registry.npmjs.org/-/npm/v1/attestations/kxco-pq-attest@<version>`.
-- **Bill of materials.** A CycloneDX SBOM is published as a GitHub Release asset
-  at `releases/download/v<version>/sbom.cyclonedx.json`, a permanent
-  unauthenticated URL. Not an expiring build artifact.
-- **Pinned where it matters.** Third-party dependencies are pinned to exact
-  versions, never ranges, so the code that performs the cryptography cannot
-  change without a release. Sibling `kxco-*` packages sit on caret ranges
-  deliberately: it means a correctness fix in the base package reaches you
-  without a release of every package above it. That is not theoretical. When
-  `@noble/post-quantum` 0.7.1 was found to fail NIST SLH-DSA verification
-  vectors, the revert in the base package propagated here on the next install.
-  Every GitHub Action is pinned by 40-character commit SHA.
-- **Conformance underneath.** The cryptography comes from
-  [`kxco-post-quantum`](https://www.npmjs.com/package/kxco-post-quantum), which
-  is run against **2,103 NIST ACVP vectors: 1,793 passed, 0 failed, 310 skipped** and a **225-check
-  cross-implementation interoperability matrix** against liboqs, Bouncy Castle
-  and two pure-Python implementations, in both directions and with negative
-  controls. Its published tarball also rebuilds bit-for-bit from its own tag,
-  verified in CI on every run.
+[Quick start](#quick-start) · [Envelope format](#envelope-format) · [For institutions](#for-institutions) · [Assessment notes](./ASSESSMENT.md) · [Changelog](./CHANGELOG.md) · [kxco.ai](https://kxco.ai)
 
 ## When to use this
 
@@ -71,9 +65,12 @@ const result = verify(envelope, keypair.publicKey)
 
 ```js
 import { attest } from 'kxco-pq-attest'
-import { createChain } from 'kxco-chain' // Armature L1 relay client
+import { KxcoChain } from 'kxco-pq-chain' // Armature L1 relay client
 
-const chain = createChain({ endpoint: 'https://chain.kxco.ai' })
+const chain = new KxcoChain({
+  identity:   institutionIdentity,           // a KxcoIdentity from kxco-pq-sdk
+  licenceKey: process.env.KXCO_LICENCE_KEY,  // the hosted anchoring service
+})
 
 const envelope = await attest(
   { ref: 'INV-2024-0042', amount: 50000 },
@@ -82,6 +79,26 @@ const envelope = await attest(
 )
 // envelope.chainAnchor: { txHash: '0x...', blockNumber: 1234567 }
 ```
+
+## For institutions
+
+The cryptography is free under Apache-2.0, works offline and needs nothing from
+KXCO, now or in ten years. What KXCO sells is the part that has to be operated:
+an answer about the present.
+
+| Service | What you get |
+|---|---|
+| Hosted key registry | Whether a key is active, revoked or rotated, answered at verification time |
+| Meta-transaction relay | KXCO validates your signed intent, pays the gas and submits it, so you never hold a token or run a node |
+| On-chain anchoring | A timestamp on Armature L1 that the chain itself has verified |
+| Live revocation | `anchored+live` verification, which confirms the signing key is still trusted now |
+| Support and SLA | Availability commitments, an escalation path and a named contact |
+
+Priced in USD, per seat, per year. No tokens, no nodes and no wallets. The line
+between free and paid is set out in
+[LICENCE-PRODUCT.md](https://github.com/KnightsbridgeAIQ/kxco-post-quantum/blob/main/LICENCE-PRODUCT.md).
+
+**Talk to us: [admin@kxco.ai](mailto:admin@kxco.ai)** · [kxco.ai](https://kxco.ai)
 
 ## API
 
@@ -96,6 +113,7 @@ Signs `payload` with ML-DSA-65 and returns an envelope. Returns a Promise.
 | `options.anchor` | `boolean` | Default `false`. When `true`, anchors the envelope hash on-chain. Requires `chain`. |
 | `options.purpose` | `string` | Optional label stored with the on-chain anchor (e.g. `'trade-confirm'`). |
 | `options.chain` | `object` | Armature L1 relay client. Required when `anchor: true`. Must implement `anchorAttestation({ payloadHash, purpose })`. |
+| `options.classical` | `{ alg, privateKey, publicKey }` | Optional Ed25519 or ECDSA-P256 co-signature over the same message the ML-DSA-65 signature covers. Generate the pair with `generateClassicalKeypair(alg)`, which uses WebCrypto and runs in Node, Workers and browsers. |
 
 When `anchor: true`, the envelope hash (SHA-256 of the signed JSON) is posted to the relay and the result is attached to the envelope as `chainAnchor`.
 
@@ -120,44 +138,75 @@ Verifies the ML-DSA-65 signature on an envelope. Returns synchronously.
 
 `payload` is the raw bytes of the original data. For strings, decode with `new TextDecoder().decode(result.payload)`.
 
+---
+
+### `verifyAsync(envelope, publicKey, opts?)`
+
+The full verifier, for the checks that need more than the JSON.
+
+| Option | Type | Description |
+|-----------|------|-------------|
+| `opts.mode` | `'signature' \| 'anchored' \| 'anchored+live'` | `anchored+live` asks the KXCO registry whether the signing key is still trusted now, and fails closed. |
+| `opts.requireBoth` | `boolean` | Require a valid classical co-signature as well as the ML-DSA-65 signature. |
+| `opts.classicalPublicKey` | `Uint8Array` | Pin the classical key rather than accepting the one the envelope names. |
+
 ## Envelope format
 
 ```json
 {
-  "kxco-attest": "1",
+  "kxco-attest": "2",
   "payload": "<base64url-encoded bytes>",
+  "alg": "ML-DSA-65",
   "kid": "<ML-DSA-65 public key fingerprint>",
-  "issuedAt": "2026-05-28T09:32:11.000Z",
-  "signature": "<base64url-encoded ML-DSA-65 signature>",
-  "chainAnchor": {
+  "sig": "<base64url-encoded ML-DSA-65 signature>",
+  "issuedAt": "2026-09-29T09:32:11.000Z",
+  "chainId": 1111111,
+  "anchor": {
     "txHash": "0xabc123...",
     "blockNumber": 1234567
-  }
+  },
+  "verifyModeHint": "anchored"
 }
 ```
 
-`chainAnchor` is present only when the envelope was anchored on-chain. The envelope is self-contained without it — `verify()` works from the JSON alone, with no external calls.
+`anchor` is present when the envelope was anchored on-chain, `chainId` when the relay confirmed the chain, and `classical` when the envelope was co-signed. The envelope is self-contained either way: `verify()` works from the JSON alone, with no external calls.
 
-The signing message is a deterministic concatenation: `kxco-attest-v1\n<payloadB64>\n<kid>\n<issuedAt>`. No field can be silently reordered or replayed against a different timestamp without invalidating the signature.
+The signing message is a deterministic concatenation behind a version prefix: `kxco-attest-v2`, then the payload, algorithm, kid, issue time, chain id, anchor transaction hash and block number, and the verify-mode hint, one per line. No field can be reordered, replayed against a different timestamp or given a different anchor without invalidating the signature.
 
-## Where this fits
+## The KXCO post-quantum family
 
-This signs, so anyone can prove where a payload came from and that it has not
-changed. The envelope is readable by design: a counterparty verifies it without
-a key exchange, offline, years later.
+This signs, so anyone can prove where a payload came from and that it is
+unchanged. The rest of the family covers the jobs around it:
 
-- [`kxco-pq-vault`](https://www.npmjs.com/package/kxco-pq-vault) when the payload must be unreadable as well as provable
-- [`kxco-pq-sdk`](https://www.npmjs.com/package/kxco-pq-sdk) to issue and verify identity credentials
-- [`kxco-pq-hsm`](https://www.npmjs.com/package/kxco-pq-hsm) for key generation, storage and rotation in hardware
+| You need to | Install |
+|---|---|
+| Put the whole stack in one install | [`kxco-pq`](https://www.npmjs.com/package/kxco-pq) |
+| Use ML-DSA, ML-KEM and SLH-DSA directly | [`kxco-post-quantum`](https://www.npmjs.com/package/kxco-post-quantum) |
+| Keep signing keys on the HSM you already run | [`kxco-pq-hsm`](https://www.npmjs.com/package/kxco-pq-hsm) |
+| Sign a document or record anyone can verify offline | [`kxco-pq-attest`](https://www.npmjs.com/package/kxco-pq-attest) |
+| Keep a tamper-evident audit trail | [`kxco-pq-audit`](https://www.npmjs.com/package/kxco-pq-audit) |
+| Verify a signature in a browser, with no server | [`kxco-verify`](https://www.npmjs.com/package/kxco-verify) |
+| Issue institution identity credentials | [`kxco-pq-sdk`](https://www.npmjs.com/package/kxco-pq-sdk) |
+| Encrypt files and payloads to one or many recipients | [`kxco-pq-vault`](https://www.npmjs.com/package/kxco-pq-vault) |
+| Encrypt Node streams and WebSockets | [`kxco-pq-tls`](https://www.npmjs.com/package/kxco-pq-tls) |
+| Sign and verify webhooks | [`kxco-post-quantum-webhook`](https://www.npmjs.com/package/kxco-post-quantum-webhook) |
+| Give an AI agent an identity a verified institution sponsors | [`kxco-pq-agent`](https://www.npmjs.com/package/kxco-pq-agent) |
+| Have Armature L1 verify a signature in consensus | [`kxco-pq-chain`](https://www.npmjs.com/package/kxco-pq-chain) |
+| Prove an envelope at three levels, offline to on-chain | [`kxco-pq-network`](https://www.npmjs.com/package/kxco-pq-network) |
+| Generate and rotate keys from a terminal | [`kxco-pq-cli`](https://www.npmjs.com/package/kxco-pq-cli) |
+| Find quantum-vulnerable cryptography in a dependency tree | [`kxco-pq-scan`](https://www.npmjs.com/package/kxco-pq-scan) |
+| Fail the build when code reaches past the wrapper | [`eslint-plugin-kxco-pq`](https://www.npmjs.com/package/eslint-plugin-kxco-pq) |
 
-## Part of the KXCO stack
+## Release integrity
 
-| Package | Purpose |
-|---------|---------|
-| [`kxco-post-quantum`](https://www.npmjs.com/package/kxco-post-quantum) | ML-DSA-65 and ML-KEM-768 primitives (NIST FIPS 204/203) |
-| `kxco-pq-attest` | This package — payload signing and on-chain attestation |
-| `kxco-pq-vault` | Post-quantum encryption |
-| [`kxco-pq-sdk`](https://www.npmjs.com/package/kxco-pq-sdk) | KxcoIdentity credential issuance and verification |
+Each release carries a SLSA provenance attestation tying the published tarball to
+the commit and workflow that built it: verify with `npm audit signatures`, or read
+it from `registry.npmjs.org/-/npm/v1/attestations/kxco-pq-attest@<version>`. A CycloneDX
+SBOM is published as a GitHub Release asset at
+`releases/download/v<version>/sbom.cyclonedx.json`, a permanent unauthenticated
+URL. Sibling `kxco-*` packages sit on caret ranges so a correctness fix in the
+base package reaches you on the next install, with no release of every package
+above it.
 
 ## Security
 
@@ -165,9 +214,9 @@ a key exchange, offline, years later.
 
 Evidenced, and reproducible on your own machine:
 
-- **2,103 NIST ACVP vectors** across FIPS 203, 204 and 205, pinned by digest: 1,793 passed, 0 failed, 310 skipped, where each skip is the library refusing a pre-hash weaker than the parameter set
-- **225 interoperability checks passed, 0 failed, 42 not applicable** against OpenSSL 3.5, liboqs, Bouncy Castle and dilithium-py/kyber-py, in both directions
-- **SLSA provenance** on every published release — verify with `npm audit signatures`
+- **1,793 NIST ACVP vectors passed, 0 failed** across FIPS 203, 204 and 205, pinned by digest, per [CONFORMANCE.md](https://github.com/KnightsbridgeAIQ/kxco-post-quantum/blob/main/CONFORMANCE.md). The other 310 are pairings the library refuses as weaker than the parameter set
+- **225 interoperability checks passed, 0 failed**, against OpenSSL 3.5, liboqs, Bouncy Castle and dilithium-py/kyber-py, in both directions
+- **SLSA provenance** on every published release: verify with `npm audit signatures`
 - **CycloneDX SBOM** published with each release
 - `npm run evidence` regenerates the whole bundle from source
 
@@ -183,4 +232,4 @@ Apache-2.0 © 2026 KXCO by Knightsbridge
 
 ## Maintainers
 
-Shayne Heffernan and John Heffernan — [KXCO by Knightsbridge](https://kxco.ai)
+Shayne Heffernan and John Heffernan, [KXCO by Knightsbridge](https://kxco.ai)
