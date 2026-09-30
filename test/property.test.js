@@ -50,15 +50,32 @@ function stubChain({ confirmed = true } = {}) {
 }
 
 const enc = new TextEncoder()
-const bytesOf = (p) => (typeof p === 'string' ? enc.encode(p) : new Uint8Array(p))
+// A plain object is signed as the UTF-8 of its JSON text.
+const bytesOf = (p) => {
+  if (typeof p === 'string') return enc.encode(p)
+  if (p instanceof Uint8Array) return new Uint8Array(p)
+  return enc.encode(JSON.stringify(p))
+}
 const same = (a, b) => Buffer.from(a).equals(Buffer.from(b))
 
-// Non-empty payloads: strings of ASCII or of any Unicode grapheme, and raw bytes.
+// Any payload, empty ones included: strings of ASCII or of any Unicode
+// grapheme, raw bytes, and plain objects.
 const payload = fc.oneof(
-  fc.string({ minLength: 1, maxLength: 200 }),
-  fc.string({ unit: 'grapheme', minLength: 1, maxLength: 60 }),
-  fc.uint8Array({ minLength: 1, maxLength: 512 }),
+  fc.constantFrom('', new Uint8Array(0)),
+  fc.string({ maxLength: 200, size: 'max' }),
+  fc.string({ unit: 'grapheme', maxLength: 60, size: 'max' }),
+  fc.uint8Array({ maxLength: 512, size: 'max' }),
+  fc.dictionary(fc.string({ maxLength: 12 }), fc.jsonValue({ maxDepth: 2 }), { maxKeys: 4 }),
 )
+
+// JSON values of other types than a field's own, and objects that carry
+// their own toString, which a field read as text would call.
+const otherJson = fc.oneof(
+  fc.jsonValue({ maxDepth: 2 }),
+  fc.constantFrom({ toString: 1 }, { toString: null }, [{ toString: 1 }], { valueOf: null, toString: null }),
+)
+// A field's own type most of the time, any other JSON value the rest.
+const orOther = (typed) => fc.oneof({ arbitrary: typed, weight: 3 }, { arbitrary: otherJson, weight: 1 })
 
 function flipByte(b64, at) {
   const bytes = Buffer.from(b64, 'base64url')
@@ -92,7 +109,7 @@ test('version 1: any payload still round-trips, so an archive of v1 envelopes ke
   }), { numRuns: 25 })
 })
 
-test('version 2: changing any one signed field, the anchor included, makes the envelope fail', async () => {
+test('version 2: changing any one signed field, in value or in JSON type, the anchor included, makes the envelope fail', async () => {
   const hex16 = fc.stringMatching(/^[0-9a-f]{16}$/)
   const txHash = fc.stringMatching(/^0x[0-9a-f]{64}$/)
   const iso = fc.date({ min: new Date('2000-01-01T00:00:00Z'), max: new Date('2100-01-01T00:00:00Z'), noInvalidDate: true })
@@ -107,16 +124,97 @@ test('version 2: changing any one signed field, the anchor included, makes the e
     fc.nat().map((n) => ['anchor', (e) => ({ ...e.anchor, blockNumber: n })]),
     fc.string({ maxLength: 20 }).map((s) => ['verifyModeHint', () => s]),
     fc.string({ maxLength: 20 }).map((s) => ['alg', () => s]),
+    // The same value as another JSON type.
+    fc.constantFrom('payload', 'alg', 'kid', 'sig', 'issuedAt', 'verifyModeHint').map((f) => [f, (e) => [e[f]]]),
+    fc.constant(['chainId', (e) => String(e.chainId)]),
+    fc.constant(['anchor', (e) => [e.anchor]]),
+    fc.constant(['anchor', (e) => ({ ...e.anchor, txHash: [e.anchor.txHash] })]),
+    fc.constant(['anchor', (e) => ({ ...e.anchor, blockNumber: String(e.anchor.blockNumber) })]),
   )
   await fc.assert(fc.asyncProperty(payload, edit, async (p, [field, change]) => {
     const env = await attest(p, signer, { anchor: true, chain: stubChain() })
     const value = change(env)
     fc.pre(JSON.stringify(value) !== JSON.stringify(env[field]))
-    const tampered = { ...env, [field]: value }
+    const tampered = JSON.parse(JSON.stringify({ ...env, [field]: value }))
     return verify(env, signer.publicKey, { mode: 'anchored' }).valid === true &&
       verify(tampered, signer.publicKey).valid === false &&
       verify(tampered, signer.publicKey, { mode: 'anchored' }).valid === false
   }), RUNS)
+})
+
+// The version 2 signing message, as attest has always written it.
+function v2Message(f) {
+  return enc.encode([
+    'kxco-attest-v2', f.payload, f.alg, f.kid, f.issuedAt, f.chainId ?? '',
+    f.anchor?.txHash ?? '', f.anchor?.blockNumber ?? '', f.verifyModeHint ?? '',
+  ].join('\n'))
+}
+
+// A line break inside a text field is the one way two different envelopes
+// could share a version 2 signing message. So attest refuses one in the hint,
+// and an envelope signed over one anyway never verifies, however the signed
+// text is split back into the eight fields.
+test('version 2: a hint holding a line break is refused at attest, and an envelope signed over one never verifies, however its text is split into fields', async () => {
+  const lineBreak = fc.constantFrom('\n', '\r', '\r\n')
+  const piece = fc.oneof(fc.string({ maxLength: 8 }), fc.nat().map(String))
+  const brokenHint = fc.tuple(piece, fc.array(fc.tuple(lineBreak, piece), { minLength: 1, maxLength: 3 }))
+    .map(([head, rest]) => head + rest.map(([b, s]) => b + s).join(''))
+  // One rank per line boundary; the seven highest-ranked boundaries are the cuts.
+  const ranks = fc.array(fc.nat(), { minLength: 16, maxLength: 16 })
+  await fc.assert(fc.asyncProperty(brokenHint, fc.boolean(), ranks, async (hint, anchored, rank) => {
+    await assert.rejects(() => attest('x', signer, { verifyModeHint: hint }), KxcoPqAttestError)
+    const fields = {
+      'kxco-attest': '2', payload: 'eA', alg: 'ML-DSA-65', kid: KID, issuedAt: new Date().toISOString(),
+      ...(anchored ? { chainId: 1111111, anchor: { txHash: TX, blockNumber: BLOCK } } : {}),
+      verifyModeHint: hint,
+    }
+    const message = v2Message(fields)
+    const signed = { ...fields, sig: Buffer.from(mlDsa.sign(signer.secretKey, message), 'hex').toString('base64url') }
+
+    const lines = new TextDecoder().decode(message).split('\n').slice(1)
+    const at = Array.from({ length: lines.length - 1 }, (_, i) => i + 1)
+      .sort((x, y) => rank[y - 1] - rank[x - 1] || x - y).slice(0, 7).sort((x, y) => x - y)
+    const parts = [0, ...at].map((from, i) => lines.slice(from, [...at, lines.length][i]).join('\n'))
+    const number = (text) => (/^-?\d+$/.test(text) ? Number(text) : text)
+    const resplit = {
+      'kxco-attest': '2', payload: parts[0], alg: parts[1], kid: parts[2], issuedAt: parts[3],
+      ...(parts[4] === '' ? {} : { chainId: number(parts[4]) }),
+      ...(parts[5] === '' && parts[6] === '' ? {} : {
+        anchor: {
+          ...(parts[5] === '' ? {} : { txHash: parts[5] }),
+          ...(parts[6] === '' ? {} : { blockNumber: number(parts[6]) }),
+        },
+      }),
+      verifyModeHint: parts[7],
+      sig: signed.sig,
+    }
+    for (const env of [signed, resplit]) {
+      for (const mode of ['signature', 'anchored']) {
+        if (verify(JSON.parse(JSON.stringify(env)), signer.publicKey, { mode }).valid !== false) return false
+      }
+    }
+    return true
+  }), { numRuns: 25 })
+})
+
+test('anchored: an anchor attached after signing, or a chain id added inside the signed one, is never read', async () => {
+  const hash = fc.stringMatching(/^0x[0-9a-f]{64}$/)
+  await fc.assert(fc.asyncProperty(payload, hash, fc.nat(), fc.oneof(fc.integer(), otherJson), fc.boolean(),
+    async (p, tx, block, chainId, confirmed) => {
+      const plain = await attest(p, signer)
+      const anchored = await attest(p, signer, { anchor: true, chain: stubChain({ confirmed }) })
+      const stapled = JSON.parse(JSON.stringify({ ...plain, chainAnchor: { txHash: tx, blockNumber: block, chainId } }))
+      const added = JSON.parse(JSON.stringify({ ...anchored, anchor: { ...anchored.anchor, chainId } }))
+      const results = [
+        [stapled, verify(stapled, signer.publicKey, { mode: 'anchored' })],
+        [stapled, await verifyAsync(stapled, signer.publicKey, { mode: 'anchored' })],
+        [added, verify(added, signer.publicKey, { mode: 'anchored' })],
+        [added, await verifyAsync(added, signer.publicKey, { mode: 'anchored' })],
+      ]
+      return results.every(([env, r]) => env === stapled
+        ? r.valid === false && r.reason === FAILURE.NOT_ANCHORED
+        : r.valid === true && r.anchor.txHash === TX && r.anchor.chainId === (confirmed ? 1111111 : undefined))
+    }), { numRuns: 25 })
 })
 
 test('anchored: the stub receipt travels inside the signature, and a missing chain confirmation is never stamped as one', async () => {
@@ -150,35 +248,45 @@ test('a version 1 signature never verifies when relabelled as version 2', async 
   }), { numRuns: 25 })
 })
 
-// The domain is every value of the envelope's own field types: strings, the
-// numeric chain id and block number, and the anchor object. Fields of other
-// JSON types are outside it.
-test('verify fails closed on any well-typed envelope it did not sign: never valid, never a throw', () => {
+// The domain is every JSON value in every field: the envelope's own field
+// types, any other JSON type, and objects that carry their own toString.
+test('verify fails closed on any envelope it did not sign, whatever its field types: never valid, never a throw', async () => {
   // Junk of any length, and junk exactly the length of an ML-DSA-65 signature,
   // so the check runs to the end rather than stopping at a length test.
   const junkB64 = fc.oneof(
-    fc.uint8Array({ maxLength: 4000 }),
+    fc.uint8Array({ maxLength: 4000, size: 'max' }),
     fc.uint8Array({ minLength: 3309, maxLength: 3309 }),
   ).map((b) => Buffer.from(b).toString('base64url'))
+  const anchorOf = () => fc.record({
+    txHash: orOther(fc.oneof(fc.constant(TX), fc.string())),
+    blockNumber: orOther(fc.nat()),
+    chainId: orOther(fc.constant(1111111)),
+  }, { requiredKeys: [] })
   const fields = {
-    'kxco-attest': fc.constantFrom('1', '2', 'x'),
-    payload: fc.oneof(junkB64, fc.string()),
-    alg: fc.constantFrom('ML-DSA-65', 'ML-DSA-44', ''),
-    kid: fc.oneof(fc.constant(KID), fc.string()),
-    sig: fc.oneof(junkB64, fc.string()),
-    signature: fc.oneof(junkB64, fc.string()),
-    issuedAt: fc.string(),
-    chainId: fc.oneof(fc.constant(1111111), fc.integer()),
-    anchor: fc.record({ txHash: fc.oneof(fc.constant(TX), fc.string()), blockNumber: fc.nat() }, { requiredKeys: [] }),
-    verifyModeHint: fc.constantFrom('signature', 'anchored', ''),
+    'kxco-attest': orOther(fc.constantFrom('1', '2', 'x')),
+    payload: orOther(fc.oneof(junkB64, fc.string())),
+    alg: orOther(fc.constantFrom('ML-DSA-65', 'ML-DSA-44', '')),
+    kid: orOther(fc.oneof(fc.constant(KID), fc.string())),
+    sig: orOther(fc.oneof(junkB64, fc.string())),
+    signature: orOther(fc.oneof(junkB64, fc.string())),
+    issuedAt: orOther(fc.string()),
+    chainId: orOther(fc.oneof(fc.constant(1111111), fc.integer())),
+    anchor: orOther(anchorOf()),
+    chainAnchor: orOther(anchorOf()),
+    verifyModeHint: orOther(fc.constantFrom('signature', 'anchored', '')),
+    classical: orOther(fc.record({
+      alg: orOther(fc.constantFrom(...CLASSICAL_ALGORITHMS)), publicKey: orOther(junkB64), sig: orOther(junkB64),
+    }, { requiredKeys: [] })),
   }
   // Complete envelopes reach the signature check; sparse ones test the field checks.
   const complete = fc.record(fields, { requiredKeys: ['kxco-attest', 'payload', 'alg', 'kid', 'sig', 'signature', 'issuedAt'] })
   const sparse = fc.record(fields, { requiredKeys: [] })
-  const notAnEnvelope = fc.oneof(fc.string(), fc.double(), fc.boolean(), fc.constant(null), fc.array(fc.string()))
-  fc.assert(fc.property(fc.oneof(complete, sparse, notAnEnvelope), fc.constantFrom('signature', 'anchored'), (env, mode) => {
+  const notAnEnvelope = fc.oneof(fc.string(), fc.double(), fc.boolean(), fc.constant(null), fc.array(fc.string()), otherJson)
+  await fc.assert(fc.asyncProperty(fc.oneof(complete, sparse, notAnEnvelope), fc.constantFrom('signature', 'anchored'), async (env, mode) => {
     const r = verify(env, signer.publicKey, { mode })
-    return r.valid === false && typeof r.error === 'string'
+    const later = await verifyAsync(env, signer.publicKey, { mode })
+    const both = await verifyAsync(env, signer.publicKey, { mode, requireBoth: true })
+    return r.valid === false && typeof r.error === 'string' && later.valid === false && both.valid === false
   }), { numRuns: 500 })
 })
 
@@ -217,16 +325,20 @@ test('dual signing: requireBoth passes with a genuine co-signature and fails whe
   }), { numRuns: 25 })
 })
 
-test('dual signing: a garbled classical block on a genuine envelope never passes requireBoth', async () => {
+test('dual signing: a garbled classical block on a genuine envelope never passes requireBoth, whatever its field types', async () => {
   const env = await attest('a genuine envelope', signer)
+  const genuine = await generateClassicalKeypair('Ed25519')
   // Any length, and the lengths of a real Ed25519 key and signature, so some
   // keys import and the signature check itself has to say no.
   const b64 = (...sizes) => fc.oneof(
-    fc.uint8Array({ maxLength: 128 }),
+    fc.uint8Array({ maxLength: 128, size: 'max' }),
     ...sizes.map((n) => fc.uint8Array({ minLength: n, maxLength: n })),
   ).map((b) => Buffer.from(b).toString('base64url'))
-  await fc.assert(fc.asyncProperty(fc.constantFrom(...CLASSICAL_ALGORITHMS, 'RSA', ''), b64(32, 65), b64(64), async (alg, publicKey, sig) => {
-    const r = await verifyAsync({ ...env, classical: { alg, publicKey, sig } }, signer.publicKey, { requireBoth: true })
-    return r.valid === false && r.reason === 'classical_invalid'
-  }), { numRuns: 100 })
+  await fc.assert(fc.asyncProperty(
+    orOther(fc.constantFrom(...CLASSICAL_ALGORITHMS, 'RSA', '')), orOther(b64(32, 65)), orOther(b64(64)), fc.boolean(),
+    async (alg, publicKey, sig, pinned) => {
+      const opts = { requireBoth: true, ...(pinned ? { classicalPublicKey: genuine.publicKey } : {}) }
+      const r = await verifyAsync({ ...env, classical: { alg, publicKey, sig } }, signer.publicKey, opts)
+      return r.valid === false && r.reason === 'classical_invalid'
+    }), { numRuns: 100 })
 })

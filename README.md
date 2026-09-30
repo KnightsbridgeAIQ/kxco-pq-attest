@@ -10,7 +10,7 @@
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue)](./LICENSE)
 [![node](https://img.shields.io/node/v/kxco-pq-attest.svg)](https://nodejs.org)
 
-Signs arbitrary data (strings, Buffers, objects) with ML-DSA-65 (NIST FIPS 204) and produces a self-contained JSON envelope any counterparty can verify without trust delegation. Optionally anchors the envelope hash on Armature L1 via the KXCO relay, creating a permanent timestamped on-chain record.
+Signs arbitrary data (strings, Buffers, objects) with ML-DSA-65 (NIST FIPS 204) and produces a self-contained JSON envelope any counterparty can verify without trust delegation. Optionally anchors the SHA-256 of the payload on Armature L1 via the KXCO relay, creating a permanent timestamped on-chain record.
 
 - **Verification needs nothing from us.** `verify(envelope, publicKey)` returns from the JSON alone: no endpoint, no account and no licence, now or in ten years.
 - **Every field is bound.** Payload, key id and issue time sit inside the signed bytes behind a version prefix, so no field can be reordered or replayed against a different timestamp.
@@ -77,7 +77,8 @@ const envelope = await attest(
   keypair,
   { anchor: true, purpose: 'invoice-sign', chain }
 )
-// envelope.chainAnchor: { txHash: '0x...', blockNumber: 1234567 }
+// envelope.anchor: { txHash: '0x...', blockNumber: 1234567 }, inside the signature
+// envelope.chainId: 1111111, when the relay confirmed the chain
 ```
 
 ## For institutions
@@ -108,14 +109,14 @@ Signs `payload` with ML-DSA-65 and returns an envelope. Returns a Promise.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `payload` | `string \| Buffer \| Uint8Array` | Data to sign. Strings are UTF-8 encoded. |
+| `payload` | `string \| Buffer \| Uint8Array \| object` | Data to sign. Strings are UTF-8 encoded. A plain object is signed as the UTF-8 of its JSON text. |
 | `keypair` | `{ secretKey, publicKey }` | ML-DSA-65 keypair from `kxco-post-quantum`. |
-| `options.anchor` | `boolean` | Default `false`. When `true`, anchors the envelope hash on-chain. Requires `chain`. |
+| `options.anchor` | `boolean` | Default `false`. When `true`, anchors the SHA-256 of the payload on-chain. Requires `chain`. |
 | `options.purpose` | `string` | Optional label stored with the on-chain anchor (e.g. `'trade-confirm'`). |
 | `options.chain` | `object` | Armature L1 relay client. Required when `anchor: true`. Must implement `anchorAttestation({ payloadHash, purpose })`. |
 | `options.classical` | `{ alg, privateKey, publicKey }` | Optional Ed25519 or ECDSA-P256 co-signature over the same message the ML-DSA-65 signature covers. Generate the pair with `generateClassicalKeypair(alg)`, which uses WebCrypto and runs in Node, Workers and browsers. |
 
-When `anchor: true`, the envelope hash (SHA-256 of the signed JSON) is posted to the relay and the result is attached to the envelope as `chainAnchor`.
+When `anchor: true`, the SHA-256 of the payload bytes is posted to the relay before signing, and the transaction hash and block number it returns are written into the envelope as `anchor`, inside the signed message. `chainId` is added, and signed too, when the relay confirmed the chain.
 
 ---
 

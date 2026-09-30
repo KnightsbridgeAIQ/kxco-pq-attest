@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.0.7
+
+An empty payload, as text or as bytes, now verifies. A plain object is signed as
+the UTF-8 of its JSON text, typed arrays and DataViews as the bytes they cover,
+and any other payload is refused with KxcoPqAttestError.
+
+verify and verifyAsync refuse a field of another type than attest writes, and a
+version 2 text field that is not one line of well-formed text, as a malformed
+envelope, and return a result rather than throwing on JSON input. The anchored
+modes read only the signed anchor of a version 2 envelope. requireBoth returns
+`classical_invalid` for a classical block that is not text.
+
+The README describes version 2 anchoring and object payloads.
+
 ## 2.0.6
 
 Documentation. No source change.

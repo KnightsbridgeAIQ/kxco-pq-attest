@@ -46,6 +46,76 @@ function fromB64url(str) {
   return new Uint8Array(Buffer.from(str, 'base64url'))
 }
 
+function isPlainObject(value) {
+  if (value === null || typeof value !== 'object') return false
+  const proto = Object.getPrototypeOf(value)
+  return proto === Object.prototype || proto === null
+}
+
+// The bytes a payload is signed as. Bytes as they are, a string as its UTF-8,
+// and a plain object as the UTF-8 of its JSON text, which is how
+// KxcoIdentity.attest in kxco-pq-sdk encodes one. Anything else has no single
+// obvious byte form, so it is refused rather than guessed at.
+function payloadBytesOf(payload) {
+  if (typeof payload === 'string') return enc.encode(payload)
+  if (payload instanceof Uint8Array || payload instanceof ArrayBuffer) return new Uint8Array(payload)
+  if (ArrayBuffer.isView(payload)) {
+    return new Uint8Array(payload.buffer, payload.byteOffset, payload.byteLength).slice()
+  }
+  if (isPlainObject(payload)) {
+    let json
+    try {
+      json = JSON.stringify(payload)
+    } catch (err) {
+      throw new KxcoPqAttestError(`payload object has no JSON text to sign: ${err.message}`)
+    }
+    if (typeof json !== 'string') throw new KxcoPqAttestError('payload object has no JSON text to sign')
+    return enc.encode(json)
+  }
+  throw new KxcoPqAttestError('payload must be a string, bytes (Uint8Array, Buffer or ArrayBuffer) or a plain object')
+}
+
+// ── field types ─────────────────────────────────────────────────────────────
+//
+// The signing messages are built from each field's text. A field of another
+// type would be read as whatever its text happens to be: a one-element array
+// as its element, an object as its toString. So every field that goes into a
+// message must be the type attest() writes, and one that is not is refused as
+// malformed. An optional field may be absent, and null reads as absent, which
+// is how the messages have always treated it.
+
+const isText = (v) => typeof v === 'string' && v !== ''
+const isAbsent = (v) => v === undefined || v === null
+const optionalText = (v) => isAbsent(v) || typeof v === 'string'
+const optionalInteger = (v) => isAbsent(v) || Number.isInteger(v)
+
+// The v2 message is also one field per line. A text field holding a line
+// break would let the same signature cover the same bytes split into
+// different fields, so none may hold one. The text has to be well-formed
+// Unicode too, because an unpaired surrogate encodes to the same bytes as
+// U+FFFD.
+const isOneLine = (v) => typeof v === 'string' && !/[\r\n]/.test(v) && v.isWellFormed()
+const optionalLine = (v) => isAbsent(v) || isOneLine(v)
+
+function anchorWellTyped(anchor) {
+  if (isAbsent(anchor)) return true
+  return isPlainObject(anchor) && optionalLine(anchor.txHash) && optionalInteger(anchor.blockNumber)
+}
+
+// What the anchored modes may read. A v2 anchor sits inside the signed
+// message, so they see only the signed fields: a chainAnchor attached after
+// signing, or a chainId added inside the anchor, is never read and never
+// returned. A v1 anchor was always attached after signing and is read as it
+// is, which is the reason version 2 exists.
+function signedAnchorView(envelope) {
+  if (envelope['kxco-attest'] !== V2) return envelope
+  const { anchor, chainId } = envelope
+  return {
+    ...(isAbsent(chainId) ? {} : { chainId }),
+    ...(isPlainObject(anchor) ? { anchor: { txHash: anchor.txHash, blockNumber: anchor.blockNumber } } : {}),
+  }
+}
+
 // ── signing messages ────────────────────────────────────────────────────────
 
 // v1. Frozen. Any change here invalidates every envelope ever issued.
@@ -150,7 +220,7 @@ async function classicalVerify(alg, rawPublicKey, message, signature) {
  * With no options this is signature mode: no network, no licence, no chain,
  * and the envelope verifies offline forever.
  *
- * @param {string|Uint8Array|Buffer} payload
+ * @param {string|Uint8Array|Buffer|object} payload (a plain object is signed as its JSON text)
  * @param {{ publicKey: Uint8Array, secretKey: Uint8Array }} keypair
  * @param {object} [opts]
  * @param {boolean} [opts.anchor]   — anchor the envelope on Armature L1. Needs `chain`.
@@ -179,8 +249,11 @@ export async function attest(payload, keypair, opts = {}) {
   if (version === V1 && (classical || verifyModeHint)) {
     throw new KxcoPqAttestError('classical co-signing and verifyModeHint need envelope version 2')
   }
+  if (!optionalLine(verifyModeHint)) {
+    throw new KxcoPqAttestError('verifyModeHint must be one line of well-formed text')
+  }
 
-  const payloadBytes = typeof payload === 'string' ? enc.encode(payload) : new Uint8Array(payload)
+  const payloadBytes = payloadBytesOf(payload)
   const payloadB64 = b64url(payloadBytes)
   const kid = fingerprint(keypair.publicKey)
   const issuedAt = new Date().toISOString()
@@ -203,6 +276,13 @@ export async function attest(payload, keypair, opts = {}) {
       purpose: purpose ?? '',
     })
     chainAnchor = { txHash: result.txHash, blockNumber: result.blockNumber }
+    // Signed, so it has to be of the types verify() accepts, or the envelope
+    // would never verify.
+    if (!anchorWellTyped(chainAnchor)) {
+      throw new KxcoPqAttestError(
+        'the chain client returned an anchor that is not { txHash: one line of text, blockNumber: integer }',
+      )
+    }
     // kxco-pq-chain 2.x reports this. An older client, or a bare object a
     // caller passed in, does not — and absence is not confirmation, so it is
     // read strictly rather than defaulted to true.
@@ -309,7 +389,7 @@ export function verify(envelope, publicKey, opts = {}) {
   if (mode === 'signature') return checked
 
   // anchored, decided from what the envelope carries.
-  const anchor = readAnchor(envelope)
+  const anchor = readAnchor(signedAnchorView(envelope))
   if (!anchor) {
     return {
       valid: false,
@@ -361,7 +441,7 @@ export async function verifyAsync(envelope, publicKey, opts = {}) {
 
   const resolved = config ?? networkConfig({ verifyMode: mode ?? 'signature' })
   const applied = await applyVerifyMode({
-    envelope,
+    envelope: signedAnchorView(envelope),
     signatureValid: true,
     kid: checked.signerKid,
     // An explicit mode argument beats the one baked into a shared config, so a
@@ -391,14 +471,20 @@ function checkSignature(envelope, publicKey) {
   }
 
   const version = envelope['kxco-attest']
-  if (version === V1) return checkSignatureV1(envelope, publicKey)
-  if (version === V2) return checkSignatureV2(envelope, publicKey)
-  return { valid: false, error: 'unsupported version', reason: FAILURE.MALFORMED }
+  if (version !== V1 && version !== V2) {
+    return { valid: false, error: 'unsupported version', reason: FAILURE.MALFORMED }
+  }
+  // The anchored modes read the chain id an anchor names and write a wrong
+  // one into their answer. It has to be an integer to be read at all.
+  if (!optionalInteger(readAnchor(signedAnchorView(envelope))?.chainId)) {
+    return { valid: false, error: 'malformed envelope', reason: FAILURE.MALFORMED }
+  }
+  return version === V1 ? checkSignatureV1(envelope, publicKey) : checkSignatureV2(envelope, publicKey)
 }
 
 function checkSignatureV1(envelope, publicKey) {
   const { payload: payloadB64, kid, issuedAt, signature } = envelope
-  if (!payloadB64 || !kid || !issuedAt || !signature) {
+  if (typeof payloadB64 !== 'string' || !isText(kid) || !isText(issuedAt) || !isText(signature)) {
     return { valid: false, error: 'malformed envelope', reason: FAILURE.MALFORMED }
   }
 
@@ -411,7 +497,8 @@ function checkSignatureV1(envelope, publicKey) {
 
 function checkSignatureV2(envelope, publicKey) {
   const { payload: payloadB64, alg, kid, sig, issuedAt, chainId, anchor, verifyModeHint } = envelope
-  if (!payloadB64 || !kid || !sig || !issuedAt) {
+  if (![payloadB64, kid, issuedAt].every(isOneLine) || !isText(kid) || !isText(issuedAt) || !isText(sig) ||
+      !optionalText(alg) || !optionalInteger(chainId) || !anchorWellTyped(anchor) || !optionalLine(verifyModeHint)) {
     return { valid: false, error: 'malformed envelope', reason: FAILURE.MALFORMED }
   }
   // The algorithm is checked against what this package signs, not used to pick
@@ -458,6 +545,9 @@ async function checkClassical(envelope, pinnedPublicKey) {
   }
 
   const { alg, publicKey: envelopePublicKey, sig } = envelope.classical
+  if (typeof alg !== 'string' || typeof envelopePublicKey !== 'string' || typeof sig !== 'string') {
+    return { valid: false, error: 'malformed classical co-signature', reason: 'classical_invalid' }
+  }
   if (!CLASSICAL_ALGORITHMS.includes(alg)) {
     return { valid: false, error: `unsupported classical alg '${alg}'`, reason: 'classical_invalid' }
   }
