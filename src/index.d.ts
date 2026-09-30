@@ -158,10 +158,11 @@ export function verifyAsync(
  * Sign a payload into an attestation envelope.
  *
  * With no options this is signature mode: no network, no licence, no chain,
- * and the envelope verifies offline forever.
+ * and the envelope verifies offline forever. A plain object is signed as the
+ * UTF-8 of its JSON text.
  */
 export function attest(
-  payload: string | Uint8Array | Buffer,
+  payload: string | Uint8Array | Buffer | Record<string, unknown>,
   keypair: Keypair,
   opts?: AttestOptions,
 ): Promise<AttestationEnvelope>

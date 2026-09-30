@@ -312,3 +312,263 @@ test('a confirmed anchor states the chain, and it is covered by the signature', 
   assert.equal(env.chainId, 1111111)
   assert.equal(verify({ ...env, chainId: undefined }, keypair.publicKey).valid, false)
 })
+
+// ── payload kinds ───────────────────────────────────────────────────────────
+
+test('an empty payload signs and verifies, as text and as bytes, in both versions', async () => {
+  for (const version of ['1', '2']) {
+    for (const empty of ['', new Uint8Array(0), Buffer.alloc(0)]) {
+      const env = await attest(empty, keypair, { version })
+      assert.equal(env.payload, '')
+      const result = verify(env, keypair.publicKey)
+      assert.equal(result.valid, true, `version ${version}: ${result.error}`)
+      assert.equal(result.payload.length, 0)
+      assert.equal((await verifyAsync(env, keypair.publicKey)).valid, true)
+    }
+  }
+})
+
+// The same encoding KxcoIdentity.attest in kxco-pq-sdk uses for an object.
+test('a plain object payload is signed as the UTF-8 of its JSON text', async () => {
+  const invoice = { ref: 'INV-2024-0042', amount: 50000, note: 'café' }
+  const json = new TextEncoder().encode(JSON.stringify(invoice))
+  for (const version of ['1', '2']) {
+    const env = await attest(invoice, keypair, { version })
+    const result = verify(env, keypair.publicKey)
+    assert.equal(result.valid, true, result.error)
+    assert.deepEqual(result.payload, json)
+    assert.deepEqual(JSON.parse(new TextDecoder().decode(result.payload)), invoice)
+  }
+  const bare = Object.assign(Object.create(null), { a: 1 })
+  assert.equal(Buffer.from(verify(await attest(bare, keypair), keypair.publicKey).payload).toString(), '{"a":1}')
+})
+
+test('the anchor posted for an object payload is the SHA-256 of its JSON text', async () => {
+  let posted
+  const chain = { anchorAttestation: async (a) => { posted = a; return mockChain.anchorAttestation() } }
+  const invoice = { ref: 'INV-2024-0042', amount: 50000 }
+  await attest(invoice, keypair, { anchor: true, chain })
+  const expected = Buffer.from(await globalThis.crypto.subtle.digest(
+    'SHA-256', new TextEncoder().encode(JSON.stringify(invoice)),
+  )).toString('hex')
+  assert.equal(posted.payloadHash, expected)
+})
+
+test('typed arrays and DataViews are signed as the bytes they cover', async () => {
+  const backing = new Uint8Array([9, 9, 1, 0, 2, 0, 9, 9])
+  for (const view of [
+    new Uint16Array(backing.buffer, 2, 2),
+    new DataView(backing.buffer, 2, 4),
+    new Int8Array(backing.buffer, 2, 4),
+  ]) {
+    const result = verify(await attest(view, keypair), keypair.publicKey)
+    assert.deepEqual(result.payload, new Uint8Array([1, 0, 2, 0]), view.constructor.name)
+  }
+  assert.deepEqual(verify(await attest(backing.buffer, keypair), keypair.publicKey).payload, backing)
+})
+
+test('a payload with no single byte form is refused with the package error', async () => {
+  class Invoice { constructor() { this.ref = 'x' } }
+  const cyclic = {}
+  cyclic.self = cyclic
+  for (const payload of [
+    undefined, null, 0, 5, true, 10n, Symbol('x'), () => {}, [1, 2, 3], ['a'],
+    new Date(0), new Map([['a', 1]]), new Invoice(),
+    cyclic, { big: 1n }, { toJSON: () => undefined },
+  ]) {
+    await assert.rejects(
+      () => attest(payload, keypair),
+      (e) => e instanceof KxcoPqAttestError,
+      typeof payload === 'symbol' ? 'symbol' : String(payload?.constructor?.name ?? payload),
+    )
+  }
+})
+
+// ── field types ─────────────────────────────────────────────────────────────
+
+const MALFORMED = { valid: false, error: 'malformed envelope', reason: FAILURE.MALFORMED }
+
+test('a signed field of any other type than the one attest writes is refused, not read as its text', async () => {
+  const env = await attest('x', keypair, { anchor: true, chain: mockChain })
+  const v1 = await attest('x', keypair, { version: '1' })
+  const cases = [
+    ['payload', { ...env, payload: [env.payload] }],
+    ['kid', { ...env, kid: [env.kid] }],
+    ['sig', { ...env, sig: [env.sig] }],
+    ['issuedAt', { ...env, issuedAt: [env.issuedAt] }],
+    ['verifyModeHint', { ...env, verifyModeHint: [env.verifyModeHint] }],
+    ['chainId as text', { ...env, chainId: String(env.chainId) }],
+    ['chainId as a fraction', { ...env, chainId: 1111111.5 }],
+    ['anchor as text', { ...env, anchor: 'x' }],
+    ['anchor as a list', { ...env, anchor: [env.anchor] }],
+    ['anchor.txHash', { ...env, anchor: { ...env.anchor, txHash: [env.anchor.txHash] } }],
+    ['anchor.blockNumber as text', { ...env, anchor: { ...env.anchor, blockNumber: String(env.anchor.blockNumber) } }],
+    ['v1 payload', { ...v1, payload: [v1.payload] }],
+    ['v1 kid', { ...v1, kid: [v1.kid] }],
+    ['v1 issuedAt', { ...v1, issuedAt: [v1.issuedAt] }],
+    ['v1 signature', { ...v1, signature: [v1.signature] }],
+  ]
+  for (const [name, tampered] of cases) {
+    const viaJson = JSON.parse(JSON.stringify(tampered))
+    assert.deepEqual(verify(viaJson, keypair.publicKey), MALFORMED, name)
+    assert.deepEqual(verify(viaJson, keypair.publicKey, { mode: 'anchored' }), MALFORMED, name)
+  }
+  // An unanchored envelope does not become anything else with an anchor-shaped string attached.
+  const plain = await attest('x', keypair)
+  assert.deepEqual(verify({ ...plain, anchor: 'x' }, keypair.publicKey), MALFORMED)
+})
+
+test('verify returns a result, never a throw, for JSON fields that carry their own toString', async () => {
+  const unconfirmed = await attest('x', keypair, { anchor: true, chain: unconfirmedChain })
+  const v1 = await attest('x', keypair, { version: '1' })
+  const odd = [{ toString: 1 }, { toString: null }, [{ toString: 1 }], { valueOf: null, toString: null }]
+  const envelopes = []
+  for (const value of odd) {
+    envelopes.push(
+      { 'kxco-attest': '2', payload: 'eA', alg: 'ML-DSA-65', kid: value, sig: 'AA', issuedAt: 't' },
+      { ...unconfirmed, alg: value },
+      { ...unconfirmed, verifyModeHint: value },
+      { ...unconfirmed, issuedAt: value },
+      { ...unconfirmed, anchor: { txHash: value } },
+      { ...unconfirmed, anchor: { ...unconfirmed.anchor, blockNumber: value } },
+      { ...v1, kid: value },
+      { ...v1, chainAnchor: { txHash: TX, blockNumber: 1, chainId: value } },
+    )
+  }
+  for (const env of envelopes.map((e) => JSON.parse(JSON.stringify(e)))) {
+    for (const mode of ['signature', 'anchored']) {
+      const sync = verify(env, keypair.publicKey, { mode })
+      assert.equal(sync.valid, false)
+      assert.equal(typeof sync.error, 'string')
+      const later = await verifyAsync(env, keypair.publicKey, { mode })
+      assert.equal(later.valid, false)
+    }
+  }
+})
+
+test('requireBoth refuses a classical key, signature or algorithm that is not text, rather than throwing', async () => {
+  const classical = await generateClassicalKeypair('Ed25519')
+  const env = await attest('dual', keypair, { classical })
+  for (const bad of [5, null, {}, true, [], { toString: 1 }]) {
+    for (const field of ['publicKey', 'sig', 'alg']) {
+      const garbled = JSON.parse(JSON.stringify({ ...env, classical: { ...env.classical, [field]: bad } }))
+      for (const opts of [{ requireBoth: true }, { requireBoth: true, classicalPublicKey: classical.publicKey }]) {
+        const result = await verifyAsync(garbled, keypair.publicKey, opts)
+        assert.equal(result.valid, false, `${field} ${JSON.stringify(bad)}`)
+        assert.equal(result.reason, 'classical_invalid', `${field} ${JSON.stringify(bad)}`)
+      }
+    }
+  }
+})
+
+// ── what the anchored modes read ────────────────────────────────────────────
+
+test('an anchor attached to a version 2 envelope after signing is never read', async () => {
+  const other = '0x' + 'cd'.repeat(32)
+  const plain = await attest('x', keypair)
+  const stapled = JSON.parse(JSON.stringify({ ...plain, chainAnchor: { txHash: other, blockNumber: 7, chainId: 1111111 } }))
+  // The signature still holds, but the envelope was never anchored.
+  const bare = verify(stapled, keypair.publicKey)
+  assert.equal(bare.valid, true)
+  assert.equal(bare.anchor, undefined)
+  for (const result of [
+    verify(stapled, keypair.publicKey, { mode: 'anchored' }),
+    await verifyAsync(stapled, keypair.publicKey, { mode: 'anchored' }),
+  ]) {
+    assert.equal(result.valid, false)
+    assert.equal(result.reason, FAILURE.NOT_ANCHORED)
+  }
+
+  // On an anchored envelope, the signed anchor is the one read.
+  const anchored = await attest('x', keypair, { anchor: true, chain: mockChain })
+  const both = JSON.parse(JSON.stringify({ ...anchored, chainAnchor: { txHash: other, blockNumber: 7 } }))
+  for (const result of [
+    verify(both, keypair.publicKey, { mode: 'anchored' }),
+    await verifyAsync(both, keypair.publicKey, { mode: 'anchored' }),
+  ]) {
+    assert.equal(result.valid, true)
+    assert.deepEqual(result.anchor, { txHash: TX, blockNumber: 90633, chainId: 1111111 })
+  }
+
+  // A version 1 anchor was always attached after signing, and is still read.
+  const v1 = await attest('x', keypair, { version: '1', anchor: true, chain: mockChain })
+  assert.equal(verify(v1, keypair.publicKey, { mode: 'anchored' }).valid, true)
+})
+
+test('a chain id added inside a version 2 anchor after signing is never read or returned', async () => {
+  const unconfirmed = await attest('x', keypair, { anchor: true, chain: unconfirmedChain })
+  for (const chainId of [1111111, 5, '1111111', { toString: 1 }, [{ toString: 1 }]]) {
+    const env = JSON.parse(JSON.stringify({ ...unconfirmed, anchor: { ...unconfirmed.anchor, chainId } }))
+    for (const result of [
+      verify(env, keypair.publicKey, { mode: 'anchored' }),
+      await verifyAsync(env, keypair.publicKey, { mode: 'anchored' }),
+    ]) {
+      assert.equal(result.valid, true, JSON.stringify(chainId))
+      assert.equal(result.anchor.txHash, TX)
+      // The signer never stated a chain, so the answer must not either.
+      assert.equal(result.anchor.chainId, undefined, JSON.stringify(chainId))
+    }
+  }
+  // Nor does one inside the anchor override the chain id that was signed.
+  const confirmed = await attest('x', keypair, { anchor: true, chain: mockChain })
+  const env = { ...confirmed, anchor: { ...confirmed.anchor, chainId: 5 } }
+  for (const result of [
+    verify(env, keypair.publicKey, { mode: 'anchored' }),
+    await verifyAsync(env, keypair.publicKey, { mode: 'anchored' }),
+  ]) {
+    assert.equal(result.valid, true)
+    assert.equal(result.anchor.chainId, 1111111)
+  }
+})
+
+// ── line breaks ─────────────────────────────────────────────────────────────
+
+// The version 2 signing message, as attest has always written it. Used to sign
+// envelopes that attest itself no longer produces.
+function signV2(fields) {
+  const msg = new TextEncoder().encode([
+    'kxco-attest-v2', fields.payload, fields.alg, fields.kid, fields.issuedAt, fields.chainId ?? '',
+    fields.anchor?.txHash ?? '', fields.anchor?.blockNumber ?? '', fields.verifyModeHint ?? '',
+  ].join('\n'))
+  return { ...fields, sig: Buffer.from(mlDsa.sign(keypair.secretKey, msg), 'hex').toString('base64url') }
+}
+
+test('attest refuses a verify-mode hint or a receipt hash that is not one line of well-formed text', async () => {
+  for (const verifyModeHint of ['5\nsignature', 'anchored\r', '\r\n', 'caf\uD800']) {
+    await assert.rejects(() => attest('x', keypair, { verifyModeHint }), KxcoPqAttestError, JSON.stringify(verifyModeHint))
+  }
+  const chain = { anchorAttestation: async () => ({ txHash: TX + '\n5', chainIdConfirmed: true }) }
+  await assert.rejects(() => attest('x', keypair, { anchor: true, chain }), KxcoPqAttestError)
+})
+
+test('a version 2 envelope signed over a line break is refused, and so is the same signature split another way', async () => {
+  const base = {
+    'kxco-attest': '2', payload: 'eA', alg: 'ML-DSA-65', kid: KID, issuedAt: new Date().toISOString(),
+  }
+  const signed = signV2({ ...base, verifyModeHint: '5\nsignature' })
+  const split = { ...signed, issuedAt: signed.issuedAt + '\n', anchor: { blockNumber: 5 }, verifyModeHint: 'signature' }
+  const inHash = signV2({ ...base, anchor: { txHash: 'a\n5' }, verifyModeHint: 'signature' })
+  const inHashSplit = { ...inHash, anchor: { txHash: 'a', blockNumber: 5 }, verifyModeHint: '\nsignature' }
+  for (const env of [signed, split, inHash, inHashSplit]) {
+    for (const mode of ['signature', 'anchored']) {
+      assert.deepEqual(verify(JSON.parse(JSON.stringify(env)), keypair.publicKey, { mode }), MALFORMED)
+    }
+  }
+  // An unpaired surrogate encodes to the same bytes as U+FFFD.
+  const replacement = signV2({ ...base, verifyModeHint: 'caf�' })
+  assert.equal(verify(replacement, keypair.publicKey).valid, true)
+  assert.deepEqual(verify({ ...replacement, verifyModeHint: 'caf\uD800' }, keypair.publicKey), MALFORMED)
+})
+
+test('attest refuses a verify-mode hint or a chain receipt of a type it cannot sign', async () => {
+  await assert.rejects(() => attest('x', keypair, { verifyModeHint: 5 }), KxcoPqAttestError)
+  await assert.rejects(() => attest('x', keypair, { verifyModeHint: ['anchored'] }), KxcoPqAttestError)
+  for (const receipt of [
+    { txHash: [TX], blockNumber: 1 },
+    { txHash: TX, blockNumber: '1' },
+    { txHash: TX, blockNumber: 1.5 },
+  ]) {
+    const chain = { anchorAttestation: async () => receipt }
+    await assert.rejects(() => attest('x', keypair, { anchor: true, chain }), KxcoPqAttestError, JSON.stringify(receipt))
+  }
+})
