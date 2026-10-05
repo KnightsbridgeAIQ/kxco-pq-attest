@@ -1,7 +1,6 @@
 # Changelog
 
-## Unreleased
-
+## 2.1.0
 Version 2 envelopes can be signed with ML-DSA-87. The keypair decides the
 parameter set: its `alg` (`'ML-DSA-65'` or `'ML-DSA-87'`) where given,
 otherwise the secret key's size. The set is written to the envelope's `alg`,
