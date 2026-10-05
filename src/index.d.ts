@@ -1,11 +1,20 @@
 /// <reference types="node" />
 
+/** The ML-DSA parameter sets an envelope can be signed under. */
+export type MlDsaAlgorithm = 'ML-DSA-65' | 'ML-DSA-87'
+
 export interface Keypair {
   publicKey: Uint8Array | Buffer
   secretKey: Uint8Array | Buffer
+  /**
+   * The keypair's parameter set. Optional: without it the secret key's size
+   * decides (4032 bytes ML-DSA-65, 4896 ML-DSA-87). A keypair holding a key
+   * the size of the other set is refused. ML-DSA-87 needs envelope version 2.
+   */
+  alg?: MlDsaAlgorithm
 }
 
-/** Classical algorithms accepted alongside ML-DSA-65 for dual signing. */
+/** Classical algorithms accepted alongside ML-DSA for dual signing. */
 export type ClassicalAlgorithm = 'Ed25519' | 'ECDSA-P256'
 
 export const CLASSICAL_ALGORITHMS: ClassicalAlgorithm[]
@@ -45,10 +54,14 @@ export interface AttestationEnvelopeV2 {
   'kxco-attest': '2'
   /** base64url payload bytes */
   payload:   string
-  alg:       'ML-DSA-65'
+  /**
+   * The parameter set, decided by the signing key and inside the signed
+   * message. A verifier checks it only with a public key of this set.
+   */
+  alg:       MlDsaAlgorithm
   /** 16-hex fingerprint of the signing public key */
   kid:       string
-  /** base64url ML-DSA-65 signature */
+  /** base64url ML-DSA signature under `alg` */
   sig:       string
   issuedAt:  string
   /**

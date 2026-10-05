@@ -25,15 +25,27 @@
 // keep passing, and an envelope that grew a second signature by default would
 // break every verifier that checks the field set.
 
-import { mlDsa, fingerprint } from 'kxco-post-quantum'
+import { mlDsa, mlDsa87, fingerprint } from 'kxco-post-quantum'
 import { applyVerifyMode, networkConfig, readAnchor, FAILURE } from 'kxco-pq-network'
 import { KxcoPqAttestError } from './errors.js'
 
 const V1 = '1'
 const V2 = '2'
+// The default set, and the only one a version 1 envelope can be.
 const ALG = 'ML-DSA-65'
 
-/** Classical algorithms accepted alongside ML-DSA-65 for dual signing. */
+// The ML-DSA parameter sets a version 2 envelope may be signed under, with
+// their FIPS 204 key sizes in bytes. The signing key decides the set, and the
+// set goes into the envelope's `alg`, which is inside the signed message. A
+// verifying key must be of the set the envelope names, so a key of one set is
+// never used as the other.
+const ML_DSA = {
+  'ML-DSA-65': { module: mlDsa, publicKey: 1952, secretKey: 4032 },
+  'ML-DSA-87': { module: mlDsa87, publicKey: 2592, secretKey: 4896 },
+}
+const mlDsaSet = (alg) => (typeof alg === 'string' && Object.hasOwn(ML_DSA, alg) ? ML_DSA[alg] : null)
+
+/** Classical algorithms accepted alongside ML-DSA for dual signing. */
 export const CLASSICAL_ALGORITHMS = ['Ed25519', 'ECDSA-P256']
 
 const enc = new TextEncoder()
@@ -214,14 +226,40 @@ async function classicalVerify(alg, rawPublicKey, message, signature) {
 
 // ── attest ──────────────────────────────────────────────────────────────────
 
+// The set a keypair signs under. An explicit `alg` on the keypair decides it;
+// otherwise the secret key's size does, and a secret key of neither size is
+// read as ML-DSA-65, as every keypair was before ML-DSA-87. Either way a
+// keypair holding a key the size of the other set is refused.
+function signingAlgorithm(keypair) {
+  const sizes = { publicKey: keypair?.publicKey?.length, secretKey: keypair?.secretKey?.length }
+  const alg = keypair?.alg ?? Object.keys(ML_DSA).find((a) => ML_DSA[a].secretKey === sizes.secretKey) ?? ALG
+  if (!mlDsaSet(alg)) {
+    throw new KxcoPqAttestError(`unsupported keypair alg '${alg}': expected ${Object.keys(ML_DSA).join(' or ')}`)
+  }
+  for (const part of ['publicKey', 'secretKey']) {
+    const other = Object.keys(ML_DSA).find((a) => a !== alg && ML_DSA[a][part] === sizes[part])
+    if (other) {
+      throw new KxcoPqAttestError(
+        `keypair is ${alg} but its ${part} is ${sizes[part]} bytes, the size of an ${other} key: ` +
+        'a key of one parameter set is not used as another',
+      )
+    }
+  }
+  return alg
+}
+
 /**
  * Sign a payload into an attestation envelope.
  *
  * With no options this is signature mode: no network, no licence, no chain,
  * and the envelope verifies offline forever.
  *
+ * The keypair decides the parameter set: ML-DSA-65 (the default) or, in a
+ * version 2 envelope, ML-DSA-87. Its `alg` names it where given; otherwise the
+ * secret key's size does.
+ *
  * @param {string|Uint8Array|Buffer|object} payload (a plain object is signed as its JSON text)
- * @param {{ publicKey: Uint8Array, secretKey: Uint8Array }} keypair
+ * @param {{ publicKey: Uint8Array, secretKey: Uint8Array, alg?: 'ML-DSA-65'|'ML-DSA-87' }} keypair
  * @param {object} [opts]
  * @param {boolean} [opts.anchor]   — anchor the envelope on Armature L1. Needs `chain`.
  * @param {string}  [opts.purpose]  — purpose recorded with the anchor
@@ -251,6 +289,12 @@ export async function attest(payload, keypair, opts = {}) {
   }
   if (!optionalLine(verifyModeHint)) {
     throw new KxcoPqAttestError('verifyModeHint must be one line of well-formed text')
+  }
+  const alg = signingAlgorithm(keypair)
+  if (version === V1 && alg !== ALG) {
+    throw new KxcoPqAttestError(
+      `envelope version 1 carries no algorithm and is ${ALG} only; an ${alg} key needs envelope version 2`,
+    )
   }
 
   const payloadBytes = payloadBytesOf(payload)
@@ -298,15 +342,15 @@ export async function attest(payload, keypair, opts = {}) {
   const hint = verifyModeHint ?? (chainAnchor ? 'anchored' : 'signature')
 
   const msg = signingMsgV2({
-    payloadB64, alg: ALG, kid, issuedAt, chainId, anchor: chainAnchor, verifyModeHint: hint,
+    payloadB64, alg, kid, issuedAt, chainId, anchor: chainAnchor, verifyModeHint: hint,
   })
 
   const envelope = {
     'kxco-attest': V2,
     payload: payloadB64,
-    alg: ALG,
+    alg,
     kid,
-    sig: b64url(Buffer.from(mlDsa.sign(new Uint8Array(keypair.secretKey), msg), 'hex')),
+    sig: b64url(Buffer.from(ML_DSA[alg].module.sign(new Uint8Array(keypair.secretKey), msg), 'hex')),
     issuedAt,
     ...(chainId ? { chainId } : {}),
     ...(chainAnchor ? { anchor: chainAnchor } : {}),
@@ -501,14 +545,29 @@ function checkSignatureV2(envelope, publicKey) {
       !optionalText(alg) || !optionalInteger(chainId) || !anchorWellTyped(anchor) || !optionalLine(verifyModeHint)) {
     return { valid: false, error: 'malformed envelope', reason: FAILURE.MALFORMED }
   }
-  // The algorithm is checked against what this package signs, not used to pick
-  // an implementation. An envelope cannot name its own verification routine.
-  if (alg !== ALG) {
+  // The algorithm is checked against what this package signs, and then bound
+  // to the verifying key: the caller's key is what is trusted, so it has to be
+  // of the set the envelope names. An envelope cannot name its own
+  // verification routine, and cannot have a key checked as the other set.
+  const set = mlDsaSet(alg)
+  if (!set) {
     return { valid: false, error: `unsupported alg '${alg}'`, reason: FAILURE.MALFORMED }
+  }
+  // byteLength first, so a key passed as an ArrayBuffer is measured as the
+  // bytes pqVerify reads from it.
+  const keyLength = publicKey?.byteLength ?? publicKey?.length
+  if (keyLength !== set.publicKey) {
+    return {
+      valid: false,
+      error: 'signature invalid',
+      reason: FAILURE.SIGNATURE_INVALID,
+      detail: `the envelope is signed under ${alg}, which takes a ${set.publicKey}-byte public key, ` +
+        `and the key given is ${keyLength} bytes`,
+    }
   }
 
   const msg = signingMsgV2({ payloadB64, alg, kid, issuedAt, chainId, anchor, verifyModeHint })
-  if (!pqVerify(publicKey, msg, sig)) {
+  if (!pqVerify(publicKey, msg, sig, set.module)) {
     return { valid: false, error: 'signature invalid', reason: FAILURE.SIGNATURE_INVALID }
   }
 
@@ -522,9 +581,9 @@ function checkSignatureV2(envelope, publicKey) {
   }
 }
 
-function pqVerify(publicKey, message, sigB64) {
+function pqVerify(publicKey, message, sigB64, module = mlDsa) {
   try {
-    return mlDsa.verify(
+    return module.verify(
       new Uint8Array(publicKey),
       message,
       Buffer.from(fromB64url(sigB64)).toString('hex'),
@@ -540,7 +599,7 @@ async function checkClassical(envelope, pinnedPublicKey) {
       valid: false,
       error: 'no classical co-signature',
       reason: 'classical_missing',
-      detail: 'requireBoth was set but this envelope carries only the ML-DSA-65 signature',
+      detail: `requireBoth was set but this envelope carries only the ${envelope['kxco-attest'] === V2 ? envelope.alg : ALG} signature`,
     }
   }
 

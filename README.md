@@ -105,12 +105,12 @@ between free and paid is set out in
 
 ### `attest(payload, keypair, options?)`
 
-Signs `payload` with ML-DSA-65 and returns an envelope. Returns a Promise.
+Signs `payload` with ML-DSA-65, or with ML-DSA-87 when the keypair is an ML-DSA-87 one, and returns an envelope. Returns a Promise.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `payload` | `string \| Buffer \| Uint8Array \| object` | Data to sign. Strings are UTF-8 encoded. A plain object is signed as the UTF-8 of its JSON text. |
-| `keypair` | `{ secretKey, publicKey }` | ML-DSA-65 keypair from `kxco-post-quantum`. |
+| `keypair` | `{ secretKey, publicKey, alg? }` | ML-DSA-65 or ML-DSA-87 keypair from `kxco-post-quantum`. The key decides the set: `alg` (`'ML-DSA-65'` or `'ML-DSA-87'`) where given, otherwise the secret key's size. A keypair holding a key the size of the other set is refused. ML-DSA-87 needs envelope version 2, the default. |
 | `options.anchor` | `boolean` | Default `false`. When `true`, anchors the SHA-256 of the payload on-chain. Requires `chain`. |
 | `options.purpose` | `string` | Optional label stored with the on-chain anchor (e.g. `'trade-confirm'`). |
 | `options.chain` | `object` | Armature L1 relay client. Required when `anchor: true`. Must implement `anchorAttestation({ payloadHash, purpose })`. |
@@ -122,12 +122,12 @@ When `anchor: true`, the SHA-256 of the payload bytes is posted to the relay bef
 
 ### `verify(envelope, publicKey)`
 
-Verifies the ML-DSA-65 signature on an envelope. Returns synchronously.
+Verifies the ML-DSA signature on an envelope, under the parameter set its `alg` names. Returns synchronously.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `envelope` | `object` | Envelope produced by `attest()`. |
-| `publicKey` | `Uint8Array` | ML-DSA-65 public key corresponding to the signer. |
+| `publicKey` | `Uint8Array` | Public key corresponding to the signer, of the set the envelope names: 1952 bytes for ML-DSA-65, 2592 for ML-DSA-87. A key of the other set does not verify. A version 1 envelope is ML-DSA-65. |
 
 ```js
 // success
@@ -170,7 +170,7 @@ The full verifier, for the checks that need more than the JSON.
 }
 ```
 
-`anchor` is present when the envelope was anchored on-chain, `chainId` when the relay confirmed the chain, and `classical` when the envelope was co-signed. The envelope is self-contained either way: `verify()` works from the JSON alone, with no external calls.
+`alg` is `"ML-DSA-65"` or `"ML-DSA-87"`, decided by the signing key, and `sig` is a signature under that set (3309 or 4627 bytes). `anchor` is present when the envelope was anchored on-chain, `chainId` when the relay confirmed the chain, and `classical` when the envelope was co-signed. The envelope is self-contained either way: `verify()` works from the JSON alone, with no external calls.
 
 The signing message is a deterministic concatenation behind a version prefix: `kxco-attest-v2`, then the payload, algorithm, kid, issue time, chain id, anchor transaction hash and block number, and the verify-mode hint, one per line. No field can be reordered, replayed against a different timestamp or given a different anchor without invalidating the signature.
 
