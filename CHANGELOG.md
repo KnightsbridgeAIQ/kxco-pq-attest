@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.1.0
+Version 2 envelopes can be signed with ML-DSA-87. The keypair decides the
+parameter set: its `alg` (`'ML-DSA-65'` or `'ML-DSA-87'`) where given,
+otherwise the secret key's size. The set is written to the envelope's `alg`,
+which was already inside the signed message, so relabelling an envelope breaks
+its signature. A keypair holding a key the size of the other set is refused
+with KxcoPqAttestError.
+
+verify and verifyAsync accept `ML-DSA-87` envelopes and check each envelope
+only with a public key of the set it names. A key of the other set fails as
+`signature_invalid`, with a `detail` naming the sizes. Version 1 carries no
+algorithm and stays ML-DSA-65: an ML-DSA-87 key asked for a version 1 envelope
+is refused. ML-DSA-65 remains the default, and every envelope 2.0.7 wrote
+verifies unchanged, which a fixture of 2.0.7 envelopes now tests.
+
 ## 2.0.7
 
 An empty payload, as text or as bytes, now verifies. A plain object is signed as

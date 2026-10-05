@@ -16,7 +16,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import fc from 'fast-check'
-import { mlDsa, fingerprint } from 'kxco-post-quantum'
+import { mlDsa, mlDsa87, fingerprint } from 'kxco-post-quantum'
 import { FAILURE } from 'kxco-pq-network'
 import {
   attest, verify, verifyAsync, generateClassicalKeypair, CLASSICAL_ALGORITHMS,
@@ -99,6 +99,19 @@ test('version 2: any payload round-trips through attest and verify, byte for byt
       same(r.payload, bytesOf(p)) &&
       verify(env, other.publicKey).valid === false
   }), RUNS)
+})
+
+test('ML-DSA-87: any payload round-trips under an ML-DSA-87 key, and never verifies under an ML-DSA-65 key', async () => {
+  const signer87 = mlDsa87.ml_dsa87.keygen()
+  await fc.assert(fc.asyncProperty(payload, async (p) => {
+    const env = await attest(p, signer87)
+    const r = verify(env, signer87.publicKey)
+    return env.alg === 'ML-DSA-87' &&
+      r.valid === true &&
+      r.signerKid === fingerprint(signer87.publicKey) &&
+      same(r.payload, bytesOf(p)) &&
+      verify(env, signer.publicKey).valid === false
+  }), { numRuns: 10 })
 })
 
 test('version 1: any payload still round-trips, so an archive of v1 envelopes keeps verifying', async () => {
