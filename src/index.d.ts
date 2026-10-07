@@ -8,8 +8,10 @@ export interface Keypair {
   secretKey: Uint8Array | Buffer
   /**
    * The keypair's parameter set. Optional: without it the secret key's size
-   * decides (4032 bytes ML-DSA-65, 4896 ML-DSA-87). A keypair holding a key
-   * the size of the other set is refused. ML-DSA-87 needs envelope version 2.
+   * decides (4896 bytes ML-DSA-87, 4032 ML-DSA-65), and in a version 2
+   * envelope a key of neither size is read as ML-DSA-87, the default. A keypair
+   * holding a key the size of the other set is refused. ML-DSA-87 needs
+   * envelope version 2.
    */
   alg?: MlDsaAlgorithm
 }

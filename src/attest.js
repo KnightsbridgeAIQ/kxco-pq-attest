@@ -31,8 +31,11 @@ import { KxcoPqAttestError } from './errors.js'
 
 const V1 = '1'
 const V2 = '2'
-// The default set, and the only one a version 1 envelope can be.
-const ALG = 'ML-DSA-65'
+// The only set a version 1 envelope can be. It carries no algorithm field.
+const V1_ALG = 'ML-DSA-65'
+// The set a version 2 keypair signs under when neither its `alg` nor its
+// secret key's size names one.
+const DEFAULT_ALG = 'ML-DSA-87'
 
 // The ML-DSA parameter sets a version 2 envelope may be signed under, with
 // their FIPS 204 key sizes in bytes. The signing key decides the set, and the
@@ -228,11 +231,15 @@ async function classicalVerify(alg, rawPublicKey, message, signature) {
 
 // The set a keypair signs under. An explicit `alg` on the keypair decides it;
 // otherwise the secret key's size does, and a secret key of neither size is
-// read as ML-DSA-65, as every keypair was before ML-DSA-87. Either way a
-// keypair holding a key the size of the other set is refused.
-function signingAlgorithm(keypair) {
-  const sizes = { publicKey: keypair?.publicKey?.length, secretKey: keypair?.secretKey?.length }
-  const alg = keypair?.alg ?? Object.keys(ML_DSA).find((a) => ML_DSA[a].secretKey === sizes.secretKey) ?? ALG
+// read as `fallback`: ML-DSA-87 for a version 2 envelope, ML-DSA-65 for a
+// version 1. Sizes are byte lengths, so a key held as an ArrayBuffer is
+// measured too. Either way a keypair holding a key the size of the other set
+// is refused.
+const byteSize = (key) => key?.byteLength ?? key?.length
+
+function signingAlgorithm(keypair, fallback) {
+  const sizes = { publicKey: byteSize(keypair?.publicKey), secretKey: byteSize(keypair?.secretKey) }
+  const alg = keypair?.alg ?? Object.keys(ML_DSA).find((a) => ML_DSA[a].secretKey === sizes.secretKey) ?? fallback
   if (!mlDsaSet(alg)) {
     throw new KxcoPqAttestError(`unsupported keypair alg '${alg}': expected ${Object.keys(ML_DSA).join(' or ')}`)
   }
@@ -254,9 +261,10 @@ function signingAlgorithm(keypair) {
  * With no options this is signature mode: no network, no licence, no chain,
  * and the envelope verifies offline forever.
  *
- * The keypair decides the parameter set: ML-DSA-65 (the default) or, in a
- * version 2 envelope, ML-DSA-87. Its `alg` names it where given; otherwise the
- * secret key's size does.
+ * The keypair decides the parameter set: ML-DSA-87 or ML-DSA-65 in a version 2
+ * envelope, and ML-DSA-65 only in a version 1. Its `alg` names it where given;
+ * otherwise the secret key's size does, and in a version 2 envelope a key of
+ * neither size is read as ML-DSA-87, the default.
  *
  * @param {string|Uint8Array|Buffer|object} payload (a plain object is signed as its JSON text)
  * @param {{ publicKey: Uint8Array, secretKey: Uint8Array, alg?: 'ML-DSA-65'|'ML-DSA-87' }} keypair
@@ -290,10 +298,10 @@ export async function attest(payload, keypair, opts = {}) {
   if (!optionalLine(verifyModeHint)) {
     throw new KxcoPqAttestError('verifyModeHint must be one line of well-formed text')
   }
-  const alg = signingAlgorithm(keypair)
-  if (version === V1 && alg !== ALG) {
+  const alg = signingAlgorithm(keypair, version === V1 ? V1_ALG : DEFAULT_ALG)
+  if (version === V1 && alg !== V1_ALG) {
     throw new KxcoPqAttestError(
-      `envelope version 1 carries no algorithm and is ${ALG} only; an ${alg} key needs envelope version 2`,
+      `envelope version 1 carries no algorithm and is ${V1_ALG} only; an ${alg} key needs envelope version 2`,
     )
   }
 
@@ -599,7 +607,7 @@ async function checkClassical(envelope, pinnedPublicKey) {
       valid: false,
       error: 'no classical co-signature',
       reason: 'classical_missing',
-      detail: `requireBoth was set but this envelope carries only the ${envelope['kxco-attest'] === V2 ? envelope.alg : ALG} signature`,
+      detail: `requireBoth was set but this envelope carries only the ${envelope['kxco-attest'] === V2 ? envelope.alg : V1_ALG} signature`,
     }
   }
 

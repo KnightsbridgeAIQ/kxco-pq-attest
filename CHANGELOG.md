@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.2.0 (2026-10-07)
+
+ML-DSA-87 is the default set. The key still decides wherever it can: the
+keypair's `alg` where given, otherwise its secret key's size, so an ML-DSA-65
+key signs ML-DSA-65 exactly as before. A version 2 keypair whose secret key is
+of neither size is now read as ML-DSA-87 rather than ML-DSA-65. Version 1
+carries no algorithm and stays ML-DSA-65.
+
+Key sizes are measured in bytes, so a keypair held as ArrayBuffers is read as
+its own set. An ML-DSA-87 keypair held that way with no `alg` used to be read as
+ML-DSA-65 and fail to sign. It now signs ML-DSA-87.
+
+The README quick start generates an ML-DSA-87 key, and the envelope example
+shows an ML-DSA-87 envelope. verify and verifyAsync are unchanged, and every
+envelope written before this release verifies as it did.
+
+To keep the old behaviour, name the set on the keypair:
+`attest(payload, { ...keypair, alg: 'ML-DSA-65' })`. An ML-DSA-65 key needs no
+change, because its size already selects ML-DSA-65.
+
 ## 2.1.1
 
 Documentation. No source change.
