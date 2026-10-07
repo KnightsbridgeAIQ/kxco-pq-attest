@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.1.1
+
+Documentation. No source change.
+
+The package description, the opening of the README and the keywords now say
+what 2.1.0 already does: an envelope is signed and verified with ML-DSA-87 as
+well as ML-DSA-65. `ml-dsa-87` joins the keywords.
+
 ## 2.1.0
 Version 2 envelopes can be signed with ML-DSA-87. The keypair decides the
 parameter set: its `alg` (`'ML-DSA-65'` or `'ML-DSA-87'`) where given,

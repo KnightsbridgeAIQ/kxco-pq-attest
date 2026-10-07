@@ -10,7 +10,7 @@
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue)](./LICENSE)
 [![node](https://img.shields.io/node/v/kxco-pq-attest.svg)](https://nodejs.org)
 
-Signs arbitrary data (strings, Buffers, objects) with ML-DSA-65 (NIST FIPS 204) and produces a self-contained JSON envelope any counterparty can verify without trust delegation. Optionally anchors the SHA-256 of the payload on Armature L1 via the KXCO relay, creating a permanent timestamped on-chain record.
+Signs arbitrary data (strings, Buffers, objects) with ML-DSA-87 or ML-DSA-65 (NIST FIPS 204) and produces a self-contained JSON envelope any counterparty can verify without trust delegation. Optionally anchors the SHA-256 of the payload on Armature L1 via the KXCO relay, creating a permanent timestamped on-chain record.
 
 - **Verification needs nothing from us.** `verify(envelope, publicKey)` returns from the JSON alone: no endpoint, no account and no licence, now or in ten years.
 - **Every field is bound.** Payload, key id and issue time sit inside the signed bytes behind a version prefix, so no field can be reordered or replayed against a different timestamp.
@@ -211,7 +211,7 @@ above it.
 
 ## Security
 
-**ML-DSA-65** (NIST FIPS 204) via [`kxco-post-quantum`](https://www.npmjs.com/package/kxco-post-quantum), running on the OpenSSL 3.5 primitives where the runtime provides them. No custom cryptography.
+**ML-DSA-87** and **ML-DSA-65** (NIST FIPS 204) via [`kxco-post-quantum`](https://www.npmjs.com/package/kxco-post-quantum), running on the OpenSSL 3.5 primitives where the runtime provides them. No custom cryptography.
 
 Evidenced, and reproducible on your own machine:
 
