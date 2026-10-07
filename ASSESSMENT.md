@@ -10,8 +10,8 @@ and publishes the lot. Cited here, proven there.
 
 ## What this package is
 
-A payload wrapped in a self-contained JSON envelope carrying an ML-DSA-65
-signature, the signer's key fingerprint and an issue time.
+A payload wrapped in a self-contained JSON envelope carrying an ML-DSA-87 or
+ML-DSA-65 signature, the signer's key fingerprint and an issue time.
 
 **Verification needs nothing from us, and that is the product.**
 `verify(envelope, publicKey)` returns synchronously from the JSON alone. A
@@ -76,7 +76,7 @@ from `npm run evidence` recording identity, the test run, the SBOM and the
 
 **Supported versions.** One line moving forward. Fixes land in the next release.
 
-**Cost.** One ML-DSA-65 signature per envelope and one verification per check,
+**Cost.** One ML-DSA signature per envelope and one verification per check,
 so cost is per envelope rather than per byte of payload. The payload is
 base64url encoded into the JSON, which inflates it by about a third; attest a
 digest where the payload is large and the envelope is what travels.

@@ -1,6 +1,6 @@
 {
   "name": "kxco-pq-attest",
-  "version": "2.1.1",
+  "version": "2.2.0",
   "description": "Post-quantum document signing any counterparty can verify offline, years later. ML-DSA-87 or ML-DSA-65 (NIST FIPS 204) over any payload in a self-contained JSON envelope, with optional anchoring on Armature L1 for a timestamp the chain itself verified.",
   "keywords": [
     "post-quantum",
@@ -74,7 +74,7 @@
     "kxco-pq-network": "^1.0.0"
   },
   "scripts": {
-    "test": "node --test --test-timeout=30000 test/attest.test.js test/envelope-v2.test.js test/ml-dsa-87.test.js test/property.test.js",
+    "test": "node --test --test-timeout=30000 test/attest.test.js test/envelope-v2.test.js test/ml-dsa-87.test.js test/default-ml-dsa-87.test.js test/property.test.js",
     "evidence": "node scripts/build-evidence.mjs"
   },
   "funding": "https://kxco.ai",
