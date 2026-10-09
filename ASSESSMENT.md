@@ -81,7 +81,7 @@ so cost is per envelope rather than per byte of payload. The payload is
 base64url encoded into the JSON, which inflates it by about a third; attest a
 digest where the payload is large and the envelope is what travels.
 
-**Runtime.** Node 20.19 and later, with Node 24 and later running the primitives
+**Runtime.** Node 22.12 and later, with Node 24 and later running the primitives
 in OpenSSL 3.5 for roughly 4x to 8x per operation.
 
 ## Correcting this document

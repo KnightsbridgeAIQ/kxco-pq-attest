@@ -18,7 +18,7 @@ Signs arbitrary data (strings, Buffers, objects) with ML-DSA-87 or ML-DSA-65 (NI
 - **Time the chain itself vouches for.** Anchor on Armature L1 and the transaction hash and block number travel inside the signed message, still checkable by an air-gapped verifier.
 - **Hybrid when a policy asks for it.** `attest(payload, keypair, { classical })` adds an Ed25519 or ECDSA-P256 co-signature over the same message, and `verifyAsync(envelope, key, { requireBoth: true })` demands both.
 - **Three levels of proof.** `signature` and `anchored` verify offline for good; `anchored+live` adds the KXCO registry's answer that the signing key is still trusted now.
-- **Runs where you do.** Node.js 20.19 and later, and Cloudflare Workers.
+- **Runs where you do.** Node.js 22.12 and later, and Cloudflare Workers.
 - **Proven underneath.** 1,793 NIST ACVP vectors passed, 0 failed, and 225 interoperability checks against liboqs, Bouncy Castle and the Python reference implementations, 0 failed, in [`kxco-post-quantum`](https://github.com/KnightsbridgeAIQ/kxco-post-quantum/blob/main/CONFORMANCE.md).
 - **A supply chain you can check.** SLSA provenance and a CycloneDX SBOM on every release since 1.1.5, third-party dependencies pinned to exact versions, and every GitHub Action pinned by commit SHA.
 
@@ -43,7 +43,7 @@ Signs arbitrary data (strings, Buffers, objects) with ML-DSA-87 or ML-DSA-65 (NI
 npm install kxco-pq-attest
 ```
 
-Requires Node.js >= 20.19 or Cloudflare Workers.
+Requires Node.js >= 22.12 or Cloudflare Workers.
 
 ## Quick start
 
